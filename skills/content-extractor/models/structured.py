@@ -1,7 +1,10 @@
 """L2: Structured Model - machine readable."""
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .paragraph import Paragraph
 
 
 @dataclass
@@ -50,7 +53,7 @@ class StructuredData:
 @dataclass
 class ExtractedData:
     """Complete extraction result."""
-    l1_paragraphs: List[Paragraph] = field(default_factory=list)
+    l1_paragraphs: List["Paragraph"] = field(default_factory=list)
     l2_structured: StructuredData = field(default_factory=StructuredData)
 
     # Cross-document relations

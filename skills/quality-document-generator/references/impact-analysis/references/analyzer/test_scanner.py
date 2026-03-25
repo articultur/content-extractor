@@ -19,9 +19,13 @@
 import os
 import re
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, TYPE_CHECKING
 from pathlib import Path
 from enum import Enum
+
+# 类型检查时导入，避免循环依赖
+if TYPE_CHECKING:
+    from test_matcher import TestInfo
 
 
 # 测试文件模式定义
@@ -390,7 +394,7 @@ def scan_directory(
     return results
 
 
-def scanned_to_test_info(scanned: ScannedTest) -> 'TestInfo':
+def scanned_to_test_info(scanned: ScannedTest) -> "TestInfo":
     """
     将 ScannedTest 转换为 TestInfo
 
@@ -400,6 +404,9 @@ def scanned_to_test_info(scanned: ScannedTest) -> 'TestInfo':
     Returns:
         TestInfo: 兼容 test_matcher 的数据结构
     """
+    # 运行时导入避免循环依赖
+    from test_matcher import TestInfo
+
     # 将模块名首字母大写作为默认 module
     module = scanned.module.capitalize() if scanned.module else "Unknown"
 
@@ -412,14 +419,10 @@ def scanned_to_test_info(scanned: ScannedTest) -> 'TestInfo':
     )
 
 
-# 导入 TestInfo 用于返回类型
-from test_matcher import TestInfo
-
-
 def scan_and_collect(
     root_path: str,
     extensions: List[str] = None
-) -> List[TestInfo]:
+) -> List["TestInfo"]:
     """
     扫描目录并返回 TestInfo 列表
 
@@ -453,7 +456,7 @@ if __name__ == "__main__":
     print(f"找到 {len(tests)} 个测试文件:\n")
 
     # 按模块分组
-    by_module: Dict[str, List[TestInfo]] = {}
+    by_module: Dict[str, List["TestInfo"]] = {}
     for test in tests:
         module = test.module
         if module not in by_module:
