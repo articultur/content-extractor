@@ -17,6 +17,7 @@ class JSONExporter:
         structured: StructuredData,
         conflicts: List[Conflict],
         sources: List[str],
+        references: List[Dict] = None,
         actions: List[Dict] = None
     ) -> str:
         """Export complete data as JSON string."""
@@ -79,7 +80,8 @@ class JSONExporter:
                 }
                 for c in conflicts
             ],
-            "actions": actions or []
+            "actions": actions or [],
+            "vision_analysis": references or []
         }
 
         return json.dumps(data, ensure_ascii=False, indent=2)

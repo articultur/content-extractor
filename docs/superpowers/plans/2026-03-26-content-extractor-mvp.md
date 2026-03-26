@@ -6,7 +6,24 @@
 
 **Architecture:** Rule-first + LLM-enhancement hybrid. L1 (paragraph index) preserves raw text, L2 (structured) provides machine-readable output. Three-layer association: term mapping (rules) + cross-doc references (regex) + entity alignment (LLM).
 
-**Tech Stack:** Python, PyYAML, markdown-it, pytesseract (OCR), openai/anthropic (LLM)
+**Image Processing Flow:**
+```
+图片输入 → [外部 OCR/Vision MCP] → extract_full(path, vision_result)
+                                 ↓
+         combined_text = OCR文本 + Vision结构化描述
+         vision = 原始结构化数据（components/layout/design_tools）
+                                 ↓
+         L2: 从 components 直接构建 Function（不经过 MarkdownExtractor）
+         refs: vision_analysis 保留完整 JSON
+```
+
+**Tech Stack:** Python, PyYAML, markdown-it, pytesseract (local OCR备选), Vision LLM MCP (外部)
+
+**Key Design Decisions (从实践中发现):**
+1. Vision provider 由调用方通过 `set_vision_provider(fn)` 注册，Python层不依赖特定MCP
+2. 图片的 L2 结构从 Vision components 直接构建，绕过 MarkdownExtractor 的分句逻辑
+3. Vision 分析结果通过 `SourceDocument.vision` 注入，通过 `all_references` 保存到 JSON
+4. UI 原型图片（碎片化标签）与 PRD 文档（自然语言）适用不同提取路径
 
 ---
 
@@ -110,6 +127,7 @@ class SourceDocument:
     type: str  # "text", "file", "url"
     path: Optional[str] = None
     content: Optional[str] = None
+    vision: Optional[dict] = None  # 预提取的视觉分析结果（来自 LLM Vision MCP）
 
 
 @dataclass
@@ -787,7 +805,7 @@ git commit -m "feat(content-extractor): add markdown extractor with sentence rol
 
 ---
 
-## Task 6: Image Extractor (OCR)
+## Task 6: Image Extractor (OCR + Vision Provider)
 
 **Files:**
 - Create: `skills/content-extractor/extractors/image_extractor.py`
@@ -795,59 +813,164 @@ git commit -m "feat(content-extractor): add markdown extractor with sentence rol
 - [ ] **Step 1: Create image_extractor.py**
 
 ```python
-"""Extract text from images using OCR."""
+"""Extract text from images using OCR or external vision providers."""
 
-from typing import Optional
+from typing import Optional, Callable
 import os
-
-# Optional import - will work without pytesseract but warn user
-try:
-    import pytesseract
-    from PIL import Image
-    HAS_OCR = True
-except ImportError:
-    HAS_OCR = False
 
 
 class ImageExtractor:
-    """Extracts text from images using OCR."""
+    """
+    Extracts text and visual information from images.
+
+    Supports two modes:
+    1. Internal OCR: uses pytesseract (if available)
+    2. External providers: registered via set_*_provider() methods
+
+    Priority: External provider > Internal OCR
+    """
+
+    def __init__(self):
+        self._ocr_available = None
+        self._external_ocr: Optional[Callable] = None
+        self._external_vision: Optional[Callable] = None
+
+    def set_ocr_provider(self, fn: Callable[[str], Optional[str]]) -> None:
+        """Register an external OCR provider (MCP/第三方服务)."""
+        self._external_ocr = fn
+
+    def set_vision_provider(self, fn: Callable[[str], Optional[dict]]) -> None:
+        """
+        Register an external vision/LLM provider.
+
+        The fn should return dict with:
+        - page_type: str
+        - components: [{"type", "label", "function", "data"}, ...]
+        - layout: str
+        - design_tools: [str, ...]
+        - design_system: str
+        """
+        self._external_vision = fn
+
+    @property
+    def has_ocr(self) -> bool:
+        """Check if any OCR is available."""
+        return self._external_ocr is not None or self._ocr_available is True
+
+    @property
+    def has_vision(self) -> bool:
+        """Check if vision capability is available."""
+        return self._external_vision is not None
 
     def extract(self, image_path: str) -> Optional[str]:
-        """
-        Extract text from image using OCR.
-
-        Args:
-            image_path: Path to image file
-
-        Returns:
-            Extracted text or None if OCR unavailable
-        """
-        if not HAS_OCR:
-            print("Warning: OCR not available. Install pytesseract and tesseract.")
-            return None
-
+        """OCR: External provider > Internal pytesseract."""
         if not os.path.exists(image_path):
             return None
-
+        # 1. 外部 OCR provider（优先）
+        if self._external_ocr is not None:
+            try:
+                result = self._external_ocr(image_path)
+                return result.strip() if result else None
+            except Exception as e:
+                print(f"External OCR failed: {e}")
+        # 2. 内部 pytesseract
         try:
+            import pytesseract
+            from PIL import Image
             image = Image.open(image_path)
-            text = pytesseract.image_to_string(image, lang='eng+chi')
-            return text.strip()
-        except Exception as e:
-            print(f"OCR failed for {image_path}: {e}")
+            return pytesseract.image_to_string(image, lang='eng+chi').strip()
+        except Exception:
             return None
 
-    def extract_with_metadata(self, image_path: str) -> dict:
-        """Extract text and image metadata."""
-        text = self.extract(image_path)
+    def extract_with_vision(self, image_path: str, prompt: str = None) -> Optional[dict]:
+        """Vision: 仅使用外部 provider。"""
+        if not os.path.exists(image_path):
+            return None
+        if self._external_vision is not None:
+            try:
+                return self._external_vision(image_path)
+            except Exception as e:
+                print(f"External vision failed: {e}")
+        return None
 
+    def extract_full(self, image_path: str, vision_result: dict = None) -> dict:
+        """
+        完整提取：OCR + Vision 两层信息。
+
+        Args:
+            image_path: 图片路径
+            vision_result: 预提取的 Vision 结果（来自 LLM MCP）
+
+        Returns:
+            dict: {
+                "ref": str,
+                "ocr_text": str or None,
+                "has_ocr": bool,
+                "vision": dict or None,
+                "has_vision": bool,
+                "combined_text": str  # OCR + Vision 文本，供 MarkdownExtractor 处理
+            }
+        """
+        result = {
+            "ref": image_path,
+            "type": "image",
+            "ocr_text": None,
+            "has_ocr": False,
+            "vision": vision_result,
+            "has_vision": vision_result is not None,
+            "combined_text": "",
+        }
+
+        # 1. OCR
+        ocr_text = self.extract(image_path)
+        if ocr_text:
+            result["ocr_text"] = ocr_text
+            result["has_ocr"] = True
+            result["combined_text"] = ocr_text
+
+        # 2. Vision（优先用外部 provider）
+        if vision_result:
+            result["vision"] = vision_result
+            result["has_vision"] = True
+            result["combined_text"] += "\n" + self._vision_to_text(vision_result)
+        else:
+            internal = self.extract_with_vision(image_path)
+            if internal:
+                result["vision"] = internal
+                result["has_vision"] = True
+                result["combined_text"] += "\n" + self._vision_to_text(internal)
+
+        return result
+
+    def _vision_to_text(self, vision: dict) -> str:
+        """将 Vision 结果转为可读文本。"""
+        lines = []
+        if vision.get("page_type"):
+            lines.append(f"页面类型: {vision['page_type']}")
+        if vision.get("design_tools"):
+            lines.append(f"设计工具: {', '.join(vision['design_tools'])}")
+        if vision.get("design_system"):
+            lines.append(f"设计系统: {vision['design_system']}")
+        if vision.get("layout"):
+            lines.append(f"布局结构: {vision['layout']}")
+        if vision.get("components"):
+            lines.append("组件列表:")
+            for comp in vision["components"]:
+                data_str = f" (数据: {comp['data']})" if comp.get("data") else ""
+                lines.append(f"  - [{comp['type']}] {comp['label']}: {comp.get('function', '')}{data_str}")
+        return "\n".join(lines)
+
+    def extract_with_metadata(self, image_path: str) -> dict:
+        """Legacy method: extract text and image metadata."""
+        full_result = self.extract_full(image_path)
         return {
             "ref": image_path,
             "type": "image",
-            "ocr_text": text or "",
-            "has_text": bool(text),
-            "needs_vision_model": not text,  # Flag for LLM if OCR fails
-            "visual_note": f"Extracted {len(text) if text else 0} characters"
+            "ocr_text": full_result["ocr_text"] or "",
+            "has_text": full_result["has_ocr"],
+            "vision": full_result["vision"],
+            "needs_vision_model": not full_result["has_vision"],
+            "visual_note": f"OCR: {len(full_result.get('ocr_text') or '')} chars, Vision: {'✓' if full_result['has_vision'] else '✗'}"
         }
 ```
 
@@ -855,7 +978,7 @@ class ImageExtractor:
 
 ```bash
 git add skills/content-extractor/extractors/image_extractor.py
-git commit -m "feat(content-extractor): add OCR image extractor"
+git commit -m "feat(content-extractor): add OCR + Vision provider support to image extractor"
 ```
 
 ---
@@ -1445,6 +1568,7 @@ class JSONExporter:
         structured: StructuredData,
         conflicts: List[Conflict],
         sources: List[str],
+        references: List[Dict] = None,
         actions: List[Dict] = None
     ) -> str:
         """Export complete data as JSON string."""
@@ -1507,7 +1631,8 @@ class JSONExporter:
                 }
                 for c in conflicts
             ],
-            "actions": actions or []
+            "actions": actions or [],
+            "vision_analysis": references or []  # Vision LLM 分析结果
         }
 
         return json.dumps(data, ensure_ascii=False, indent=2)
@@ -1859,16 +1984,19 @@ git commit -m "test(content-extractor): add basic test suite"
 
 ## Summary
 
-**Tasks Completed: 14**
+**Tasks Completed: 14** (Task 6 已更新)
 **Total Files Created: ~25**
 
 **MVP Capabilities:**
 - Text/markdown input via clipboard or files
 - Image OCR support (optional dependency)
+- **Image Vision understanding via external MCP provider (p0)**
 - L1 paragraph extraction with sentence roles
 - L2 structured data with trigger/condition/action/benefit
+- **Vision components → L2 Function 直接构建（绕过 MarkdownExtractor）**
 - Term dictionary-based association
 - Cross-document reference extraction
+- **Vision analysis 完整保存到 JSON (`vision_analysis` refs)**
 - Conflict detection with authority-based resolution
 - Markdown report generation
 - JSON structured output
@@ -1876,10 +2004,13 @@ git commit -m "test(content-extractor): add basic test suite"
 **Dependencies to install:**
 ```bash
 pip install pyyaml pillow pytesseract markdown-it
+# Vision MCP (MiniMax or OpenAI Vision) 由 Agent 层通过 MCP 调用
 ```
 
 **Next steps after MVP:**
 1. Add PDF/Docx support (V1)
-2. Add URL handler for remote links (V1)
-3. Add LLM semantic enhancement (V1)
+2. ~~Add URL handler for remote links~~ → 由 Agent 层 mcp__fetch__fetch 处理（已完成）
+3. ~~Add LLM semantic enhancement~~ → 由 Vision MCP 处理（已完成，Task 6 更新）
 4. Add entity alignment (V2)
+5. 支持从 Vision components 直接构建 L2 Function（已在 Task 6 中实现）
+6. PDF 解析器（P1 - 复用现有工具链）

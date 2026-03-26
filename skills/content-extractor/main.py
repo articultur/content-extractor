@@ -63,15 +63,30 @@ class ContentExtractor:
             elif source.type == "file":
                 result = self.file_handler.read(source.path)
                 if result:
-                    content_type, content = result
+                    content_type, content_or_path = result
                     if content_type == "markdown":
-                        paragraphs = self.markdown_extractor.extract(content, source=source.path)
+                        paragraphs = self.markdown_extractor.extract(content_or_path, source=source.path)
                         all_paragraphs.extend(paragraphs.paragraphs)
                     elif content_type == "image":
-                        ocr_text = self.image_extractor.extract(content)
-                        if ocr_text:
-                            paragraphs = self.markdown_extractor.extract(ocr_text, source=source.path)
+                        # 完整提取：OCR + Vision 两层信息
+                        image_result = self.image_extractor.extract_full(
+                            content_or_path,
+                            vision_result=getattr(source, 'vision', None)
+                        )
+                        combined_text = image_result.get("combined_text", "")
+                        if combined_text:
+                            paragraphs = self.markdown_extractor.extract(combined_text, source=source.path)
                             all_paragraphs.extend(paragraphs.paragraphs)
+                        # 保存 Vision 分析结果
+                        if image_result.get("vision"):
+                            last_para_id = paragraphs.paragraphs[-1].id if paragraphs.paragraphs else None
+                            all_references.append({
+                                "type": "vision_analysis",
+                                "target": image_result["vision"].get("page_type", "UI Component"),
+                                "confidence": 0.95,
+                                "data": image_result["vision"],
+                                "source_paragraph": last_para_id
+                            })
                     all_sources.append(f"file:{source.path}")
 
             # Extract cross-references
@@ -118,7 +133,7 @@ class ContentExtractor:
         )
 
         json_output = self.json_exporter.export(
-            all_paragraphs, structured, conflicts, all_sources
+            all_paragraphs, structured, conflicts, all_sources, all_references
         )
 
         # Write outputs

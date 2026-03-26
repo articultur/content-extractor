@@ -11,6 +11,7 @@ class SourceDocument:
     type: str  # "text", "file", "url"
     path: Optional[str] = None
     content: Optional[str] = None
+    vision: Optional[dict] = None  # 预提取的视觉分析结果（来自 LLM Vision MCP）
 
 
 @dataclass
@@ -34,7 +35,8 @@ def load_config(config_path: str = "content-extractor.config.yaml") -> Extractor
         sources.append(SourceDocument(
             type=doc['type'],
             path=doc.get('path'),
-            content=doc.get('content')
+            content=doc.get('content'),
+            vision=doc.get('vision')
         ))
 
     return ExtractorConfig(
