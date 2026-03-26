@@ -5,7 +5,7 @@ import re
 import json
 import argparse
 from datetime import datetime
-from typing import List
+from typing import List, Dict
 
 from config import load_config, SourceDocument
 from handlers.clipboard import ClipboardHandler
@@ -300,6 +300,22 @@ class ContentExtractor:
 
         # Add Vision-derived functions
         structured.functions.extend(all_vision_functions)
+
+        # Link Vision functions to UI pages (rendered_as edges)
+        # Build a map of unique page_type -> ui_id to avoid duplicate UI nodes
+        page_type_to_ui_id: Dict[str, str] = {}
+        for vf in all_vision_functions:
+            page_type = vf.attributes.get("page_type")
+            if not page_type:
+                continue
+            if page_type not in page_type_to_ui_id:
+                ui_id = f"ui_{self.term_mapper.build_term_normalized(page_type)}"
+                page_type_to_ui_id[page_type] = ui_id
+                self.graph_builder.link_function_to_ui(vf.id, ui_id, page_type, confidence=0.7)
+            else:
+                # Already linked this page_type, just add edge
+                ui_id = page_type_to_ui_id[page_type]
+                self.graph_builder.add_edge(vf.id, ui_id, "rendered_as", 0.7)
 
         # Merge duplicate functions using EntityAligner
         merged_count = structured.merge_duplicates(self.entity_aligner, threshold=0.85)
