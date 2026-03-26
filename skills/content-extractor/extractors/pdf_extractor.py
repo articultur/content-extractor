@@ -1,14 +1,16 @@
-"""Extract text from PDF files using pdfplumber."""
+"""Extract text and images from PDF files."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import os
+import tempfile
 
 
 class PDFExtractor:
-    """Extracts text content from PDF files."""
+    """Extracts text and images from PDF files."""
 
     def __init__(self):
         self._available = None
+        self._pymupdf_available = None
 
     def is_available(self) -> bool:
         """Check if PDF extraction is available."""
@@ -19,6 +21,16 @@ class PDFExtractor:
             except ImportError:
                 self._available = False
         return self._available
+
+    def _is_pymupdf_available(self) -> bool:
+        """Check if PyMuPDF is available for image extraction."""
+        if self._pymupdf_available is None:
+            try:
+                import fitz
+                self._pymupdf_available = True
+            except ImportError:
+                self._pymupdf_available = False
+        return self._pymupdf_available
 
     def extract(self, pdf_path: str) -> Optional[List[str]]:
         """Extract text from PDF file. Returns list of page texts."""
@@ -38,8 +50,68 @@ class PDFExtractor:
         except Exception:
             return None
 
+    def _extract_images_pymupdf(self, pdf_path: str) -> List[List[Dict[str, Any]]]:
+        """Extract images from PDF using PyMuPDF. Returns list of images per page."""
+        try:
+            import fitz
+            images_per_page = []
+            doc = fitz.open(pdf_path)
+            for page_num, page in enumerate(doc):
+                page_images = []
+                image_list = page.get_images(full=True)
+                for img_index, img in enumerate(image_list):
+                    xref = img[0]
+                    pix = fitz.Pixmap(doc, xref)
+                    if pix.n - pix.alpha < 4:
+                        # RGB or Grayscale - save as PNG
+                        img_data = pix.tobytes("png")
+                    else:
+                        # CMYK - convert to RGB first
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
+                        img_data = pix.tobytes("png")
+                    # Save to temp file
+                    temp_file = tempfile.NamedTemporaryFile(
+                        suffix=".png", delete=False
+                    )
+                    temp_file.write(img_data)
+                    temp_file.close()
+                    page_images.append({
+                        "path": temp_file.name,
+                        "page": page_num,
+                        "index": img_index,
+                        "width": pix.width,
+                        "height": pix.height,
+                    })
+                images_per_page.append(page_images)
+            doc.close()
+            return images_per_page
+        except Exception:
+            return []
+
+    def _extract_images_pdfplumber(self, pdf_path: str) -> List[List[Dict[str, Any]]]:
+        """Extract image metadata from PDF using pdfplumber (no actual bytes)."""
+        try:
+            import pdfplumber
+            images_per_page = []
+            with pdfplumber.open(pdf_path) as pdf:
+                for page in pdf.pages:
+                    page_images = []
+                    for img in page.images:
+                        page_images.append({
+                            "path": None,  # No actual path - pdfplumber doesn't extract bytes
+                            "page": page.page_number - 1,
+                            "index": len(page_images),
+                            "width": img.get("width"),
+                            "height": img.get("height"),
+                            "bbox": (img.get("x0"), img.get("y0"), img.get("x1"), img.get("y1")),
+                        })
+                    images_per_page.append(page_images)
+            return images_per_page
+        except Exception:
+            return []
+
     def extract_full(self, pdf_path: str) -> Optional[dict]:
-        """Extract full content with metadata."""
+        """Extract full content with text, metadata, and images."""
         if not self.is_available():
             return None
         if not os.path.exists(pdf_path):
@@ -47,10 +119,20 @@ class PDFExtractor:
         try:
             import pdfplumber
             with pdfplumber.open(pdf_path) as pdf:
-                return {
-                    "pages": [page.extract_text() or "" for page in pdf.pages],
-                    "metadata": pdf.metadata,
-                    "page_count": len(pdf.pages)
-                }
+                pages_text = [page.extract_text() or "" for page in pdf.pages]
+
+            # Extract images
+            if self._is_pymupdf_available():
+                images = self._extract_images_pymupdf(pdf_path)
+            else:
+                # Fall back to pdfplumber for metadata only
+                images = self._extract_images_pdfplumber(pdf_path)
+
+            return {
+                "pages": pages_text,
+                "metadata": pdf.metadata if hasattr(pdf, 'metadata') else {},
+                "page_count": len(pages_text),
+                "images": images,
+            }
         except Exception:
             return None

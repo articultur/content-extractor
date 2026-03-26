@@ -251,3 +251,5 @@ class TestPDFExtractor:
         assert "pages" in result
         assert "metadata" in result
         assert "page_count" in result
+        assert "images" in result
+        assert isinstance(result["images"], list)

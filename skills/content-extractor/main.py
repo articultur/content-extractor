@@ -10,6 +10,7 @@ from handlers.clipboard import ClipboardHandler
 from handlers.file_handler import FileHandler
 from extractors.markdown_extractor import MarkdownExtractor
 from extractors.image_extractor import ImageExtractor
+from extractors.pdf_extractor import PDFExtractor
 from associator.term_mapper import TermMapper
 from associator.ref_linker import RefLinker
 from merger.conflict_resolver import ConflictResolver
@@ -28,6 +29,7 @@ class ContentExtractor:
         self.file_handler = FileHandler()
         self.markdown_extractor = MarkdownExtractor()
         self.image_extractor = ImageExtractor()
+        self.pdf_extractor = PDFExtractor()
         self.term_mapper = TermMapper()
         self.ref_linker = RefLinker()
         self.conflict_resolver = ConflictResolver()
@@ -87,6 +89,42 @@ class ContentExtractor:
                                 "data": image_result["vision"],
                                 "source_paragraph": last_para_id
                             })
+
+                    elif content_type == "pdf":
+                        # PDF 提取：text + embedded images (for OCR/Vision)
+                        pdf_result = self.pdf_extractor.extract_full(content_or_path)
+                        if pdf_result:
+                            # 处理 PDF 文本
+                            pdf_text = "\n\n".join(pdf_result.get("pages", []))
+                            if pdf_text.strip():
+                                paragraphs = self.markdown_extractor.extract(pdf_text, source=source.path)
+                                all_paragraphs.extend(paragraphs.paragraphs)
+                            # 处理 PDF 内嵌图片 (if any)
+                            pdf_images = pdf_result.get("images", [])
+                            for page_idx, page_imgs in enumerate(pdf_images):
+                                for img_data in page_imgs:
+                                    # img_data 可能是图片路径或图片对象
+                                    if isinstance(img_data, str) and os.path.exists(img_data):
+                                        image_result = self.image_extractor.extract_full(
+                                            img_data,
+                                            vision_result=getattr(source, 'vision', None)
+                                        )
+                                        combined_text = image_result.get("combined_text", "")
+                                        if combined_text:
+                                            img_paragraphs = self.markdown_extractor.extract(
+                                                combined_text,
+                                                source=f"{source.path}#page={page_idx+1}"
+                                            )
+                                            all_paragraphs.extend(img_paragraphs)
+                                        if image_result.get("vision"):
+                                            last_para_id = img_paragraphs[-1].id if img_paragraphs else None
+                                            all_references.append({
+                                                "type": "vision_analysis",
+                                                "target": image_result["vision"].get("page_type", "UI Component"),
+                                                "confidence": 0.95,
+                                                "data": image_result["vision"],
+                                                "source_paragraph": last_para_id
+                                            })
                     all_sources.append(f"file:{source.path}")
 
             # Extract cross-references

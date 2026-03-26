@@ -38,6 +38,9 @@ class FileHandler:
         if ext in ('.png', '.jpg', '.jpeg', '.gif', '.bmp'):
             return ("image", path)  # Return path for OCR processing
 
+        if ext == '.pdf':
+            return ("pdf", path)  # Return path for PDF processing
+
         return None
 
     def list_files(self, directory: str, recursive: bool = False) -> List[str]:
