@@ -20,6 +20,7 @@ from associator.term_mapper import TermMapper
 from associator.ref_linker import RefLinker
 from merger.conflict_resolver import ConflictResolver
 from merger.graph_builder import GraphBuilder
+from merger.confidence_calculator import ConfidenceCalculator
 from output.markdown_report import MarkdownReportGenerator
 from output.json_exporter import JSONExporter
 from dictionaries import TermDictionary
@@ -42,6 +43,7 @@ class ContentExtractor:
         self.ref_linker = RefLinker()
         self.conflict_resolver = ConflictResolver()
         self.graph_builder = GraphBuilder()
+        self.confidence_calculator = ConfidenceCalculator()
         self.markdown_gen = MarkdownReportGenerator()
         self.json_exporter = JSONExporter()
 
@@ -268,6 +270,11 @@ class ContentExtractor:
         # Build structured data
         structured = StructuredData()
         for i, para in enumerate(all_paragraphs):
+            # Extract source type hint from paragraph source path
+            source_hint = self._extract_source_hint(para.source)
+            confidence = self.confidence_calculator.calculate_paragraph_confidence(
+                para, source_hint
+            )
             func = Function(
                 id=f"func_{i+1:03d}",
                 name=para.section or f"Block {i+1}",
@@ -277,7 +284,7 @@ class ContentExtractor:
                 condition=self._extract_field(para.sentences, "condition"),
                 action=self._extract_field(para.sentences, "action"),
                 benefit=self._extract_field(para.sentences, "result"),
-                confidence=0.9
+                confidence=confidence
             )
             structured.add_function(func)
 
@@ -343,6 +350,32 @@ class ContentExtractor:
             if s.role == role:
                 return s.text
         return None
+
+    def _extract_source_hint(self, source: str) -> str:
+        """Extract source type hint from paragraph source path."""
+        if not source:
+            return "text"
+        # Handle "clipboard" case
+        if source == "clipboard":
+            return "text"
+        # Handle URL-like sources
+        if source.startswith("http://") or source.startswith("https://"):
+            return "url"
+        # Extract file extension
+        import os
+        base = os.path.splitext(source.split("#")[0])[0]  # Remove fragment
+        ext = os.path.splitext(source)[1].lower()
+        # Map extension to source type
+        ext_map = {
+            ".pdf": "pdf",
+            ".docx": "docx",
+            ".md": "markdown",
+            ".txt": "text",
+            ".png": "image",
+            ".jpg": "image",
+            ".jpeg": "image",
+        }
+        return ext_map.get(ext, "text")
 
 
 def main():

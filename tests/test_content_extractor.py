@@ -293,3 +293,60 @@ class TestDOCXExtractor:
 
         result = extractor.extract_full("nonexistent.docx")
         assert result is None
+
+
+class TestConfidenceCalculator:
+    def test_calculate_paragraph_confidence_text_source(self):
+        """Test confidence calculation for text source."""
+        from merger.confidence_calculator import ConfidenceCalculator
+        from models.paragraph import Paragraph, Sentence
+
+        calc = ConfidenceCalculator()
+
+        para = Paragraph(
+            id="p1",
+            source="clipboard",
+            section="Login",
+            raw_text="User logs in with password. System validates credentials.",
+            semantic_unit=True,
+            sentences=[
+                Sentence(id="p1_s1", text="User logs in with password.", role="action"),
+                Sentence(id="p1_s2", text="System validates credentials.", role="result"),
+            ],
+            sentence_relations=[]
+        )
+
+        confidence = calc.calculate_paragraph_confidence(para, "text")
+        assert 0.8 <= confidence <= 0.99
+
+    def test_calculate_paragraph_confidence_low_quality(self):
+        """Test confidence calculation for low quality paragraph."""
+        from merger.confidence_calculator import ConfidenceCalculator
+        from models.paragraph import Paragraph
+
+        calc = ConfidenceCalculator()
+
+        para = Paragraph(
+            id="p1",
+            source="clipboard",
+            section="",
+            raw_text="x",
+            semantic_unit=True,
+            sentences=[],
+            sentence_relations=[]
+        )
+
+        confidence = calc.calculate_paragraph_confidence(para, "text")
+        assert confidence < 0.9  # Low quality = reduced confidence
+
+    def test_source_base_confidence(self):
+        """Test source base confidence values."""
+        from merger.confidence_calculator import ConfidenceCalculator
+
+        calc = ConfidenceCalculator()
+
+        assert calc._get_base_confidence("pdf") == 0.9
+        assert calc._get_base_confidence("docx") == 0.9
+        assert calc._get_base_confidence("clipboard") == 0.95
+        assert calc._get_base_confidence("image") == 0.85
+        assert calc._get_base_confidence("vision") == 0.8
