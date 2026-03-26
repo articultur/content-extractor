@@ -107,6 +107,22 @@ class TestEntityAligner:
         merges = aligner.find_merge_candidates(candidates, threshold=0.9)
         assert len(merges) == 1
 
+    def test_calculate_similarity(self):
+        """Test calculate_similarity with various inputs."""
+        from associator.entity_aligner import EntityAligner
+
+        aligner = EntityAligner()
+
+        # Same string returns 1.0
+        assert aligner.calculate_similarity("login", "login") == 1.0
+
+        # Chinese/English equivalents return 0.85
+        assert aligner.calculate_similarity("login", "登录") == 0.85
+
+        # Unrelated strings return SequenceMatcher ratio (less than 1.0)
+        score = aligner.calculate_similarity("hello", "goodbye")
+        assert 0 < score < 1.0
+
 
 class TestVisionMapper:
     def test_vision_component_to_function(self):
