@@ -67,6 +67,47 @@ class TestConflictResolver:
         # Same condition = no conflict
 
 
+class TestEntityAligner:
+    def test_normalize_for_comparison(self):
+        """Test entity name normalization."""
+        from associator.entity_aligner import EntityAligner
+
+        aligner = EntityAligner()
+
+        assert aligner.normalize("用户登录") == aligner.normalize("user_login")
+        assert aligner.normalize("登录") == aligner.normalize("login")
+
+    def test_find_similar_entities(self):
+        """Test finding similar entities."""
+        from associator.entity_aligner import EntityAligner
+        from models.structured import Function
+
+        aligner = EntityAligner()
+
+        entities = [
+            Function(id="f1", name="用户登录", name_normalized="user_login"),
+            Function(id="f2", name="登录验证", name_normalized="login_verify"),
+            Function(id="f3", name="登出", name_normalized="logout"),
+        ]
+
+        similar = aligner.find_similar("user_login", entities, threshold=0.6)
+        assert len(similar) >= 1
+
+    def test_merge_candidates(self):
+        """Test identifying merge candidates."""
+        from associator.entity_aligner import EntityAligner
+
+        aligner = EntityAligner()
+
+        candidates = [
+            {"id": "f1", "name": "用户登录", "source": "doc_a"},
+            {"id": "f2", "name": "用户登录", "source": "doc_b"},
+        ]
+
+        merges = aligner.find_merge_candidates(candidates, threshold=0.9)
+        assert len(merges) == 1
+
+
 class TestVisionMapper:
     def test_vision_component_to_function(self):
         """Test converting Vision components to L2 Function."""
