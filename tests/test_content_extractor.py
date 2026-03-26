@@ -116,8 +116,11 @@ class TestEntityAligner:
         # Same string returns 1.0
         assert aligner.calculate_similarity("login", "login") == 1.0
 
-        # Chinese/English equivalents return 0.85
-        assert aligner.calculate_similarity("login", "登录") == 0.85
+        # Chinese term normalizes to English, then matches → 1.0 (exact match after normalization)
+        assert aligner.calculate_similarity("login", "登录") == 1.0
+
+        # Two Chinese equivalents that normalize to the same English term → 1.0
+        assert aligner.calculate_similarity("登录", "登入") == 1.0
 
         # Unrelated strings return SequenceMatcher ratio (less than 1.0)
         score = aligner.calculate_similarity("hello", "goodbye")
