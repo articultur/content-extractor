@@ -354,6 +354,11 @@ class ContentExtractor:
 
         # Semantic associations via embeddings
         if vector_store and embedding_count > 0:
+            # First add all functions as functionality nodes
+            for func in structured.functions:
+                if not self.graph_builder._node_exists(func.id):
+                    self.graph_builder.add_function(func.id, func.name, "functionality")
+            # Then create semantic association edges via vector search
             for func in structured.functions:
                 text = self._build_embedding_text(func)
                 if not text:
@@ -362,9 +367,7 @@ class ContentExtractor:
                     results = vector_store.search(text, top_k=3)
                     for r in results:
                         if r.id != func.id:
-                            self.graph_builder.link_function_to_api(
-                                func.id, r.id, r.text, r.score
-                            )
+                            self.graph_builder.add_edge(func.id, r.id, "semantic_similar", r.score)
                 except Exception:
                     pass
 
@@ -404,6 +407,24 @@ class ContentExtractor:
                         func.id, target_func.id, target_func.name, confidence
                     )
 
+        # Build full-text search index
+        from storage.full_text_index import FullTextIndex
+        full_text_index = FullTextIndex()
+        search_index_size = 0
+        for func in structured.functions:
+            full_text_index.add_function(
+                func.id,
+                func.name,
+                {
+                    "domain": func.domain,
+                    "trigger": func.trigger or "",
+                    "condition": func.condition or "",
+                    "action": func.action or "",
+                    "benefit": func.benefit or "",
+                }
+            )
+            search_index_size += 1
+
         # Generate outputs
         os.makedirs(output_dir, exist_ok=True)
 
@@ -431,6 +452,23 @@ class ContentExtractor:
         with open(graph_path, 'w', encoding='utf-8') as f:
             json.dump(graph_data, f, ensure_ascii=False, indent=2)
 
+        # Write full-text search index
+        index_path = os.path.join(output_dir, "requirements-search-index.json")
+        searchable = [
+            {
+                "id": func.id,
+                "name": func.name,
+                "domain": func.domain,
+                "trigger": func.trigger,
+                "condition": func.condition,
+                "action": func.action,
+                "benefit": func.benefit,
+            }
+            for func in structured.functions
+        ]
+        with open(index_path, 'w', encoding='utf-8') as f:
+            json.dump(searchable, f, ensure_ascii=False, indent=2)
+
         return {
             "report_path": report_path,
             "json_path": json_path,
@@ -442,7 +480,9 @@ class ContentExtractor:
                 "conflicts": len(conflicts),
                 "references": len(all_references),
                 "embeddings": embedding_count,
-                "vector_backend": type(vector_store).__name__ if vector_store else None
+                "vector_backend": type(vector_store).__name__ if vector_store else None,
+                "search_index_size": search_index_size,
+                "search_backend": type(full_text_index).__name__
             }
         }
 

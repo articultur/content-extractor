@@ -42,5 +42,23 @@ def test_embedding_semantic_associations():
     # Should have edges between the two related functions
     edges = graph.get("edges", [])
     # Verify semantic associations exist (embedding similarity)
-    func_ids = {f["name"] for f in graph.get("nodes", []) if f["type"] == "api_endpoint"}
+    func_ids = {f["name"] for f in graph.get("nodes", []) if f["type"] == "functionality"}
     assert len(func_ids) >= 2
+
+
+def test_pipeline_includes_full_text_search():
+    from main import ContentExtractor
+    from config import SourceDocument
+    import json
+    import os
+    extractor = ContentExtractor()
+    sources = [SourceDocument(type="text", content="# 登录\n用户点击登录按钮。\n\n# 支付\n用户进行支付。")]
+    result = extractor.analyze(sources, output_dir="/tmp/test_output_search")
+    # Check that search index file was created
+    index_path = "/tmp/test_output_search/requirements-search-index.json"
+    assert os.path.exists(index_path)
+    with open(index_path) as f:
+        searchable = json.load(f)
+    assert len(searchable) >= 2
+    # Check stats
+    assert result.get('stats', {}).get('search_index_size', 0) >= 2
