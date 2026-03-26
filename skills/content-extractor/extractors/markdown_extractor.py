@@ -57,8 +57,10 @@ class MarkdownExtractor:
 
     def _extract_sentences(self, text: str, para_id: str) -> List[Sentence]:
         """Extract sentences and their roles from text."""
-        # Simple sentence splitting
-        sentence_texts = re.split(r'[。！？\n]', text)
+        # Split on sentence-ending punctuation followed by whitespace and uppercase/Chinese
+        # Also split on newlines (paragraph breaks)
+        # Avoids splitting on decimals (1.5) or common abbreviations (e.g., i.e.)
+        sentence_texts = re.split(r'(?<=[.!?。！？])\s+(?=[A-Z\u4e00-\u9fff])|[\n]+', text)
         sentences = []
 
         for i, sent in enumerate(sentence_texts):

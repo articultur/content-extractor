@@ -1,6 +1,8 @@
 """Handle remote URL input."""
 
 import re
+import tempfile
+import os
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
@@ -19,7 +21,6 @@ class URLHandler:
     DOMAIN_PARSERS = {
         "github.com": "github",
         "gist.github.com": "gist",
-        # Note: "confluence" matches any domain containing "confluence" (e.g., *.atlassian.com)
         "confluence": "confluence",
         "notion.so": "notion",
         "notion.site": "notion",
@@ -73,3 +74,69 @@ class URLHandler:
                 return filename
 
         return None
+
+    def fetch(self, url: str) -> Optional[Tuple[str, str]]:
+        """
+        Fetch content from URL.
+
+        Returns:
+            (content_type, content_or_path) where content_type is:
+            - "text": raw text content
+            - "markdown": markdown content
+            - "image": path to downloaded image
+            - "pdf": path to downloaded PDF file
+            - "html": raw HTML content
+            or None if fetch failed
+        """
+        import urllib.request
+        import urllib.error
+
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (compatible; Content-Extractor/1.0)'
+                }
+            )
+            with urllib.request.urlopen(req, timeout=30) as response:
+                content_type = response.headers.get('Content-Type', '').lower()
+                data = response.read()
+
+                # Handle text/markdown content
+                if 'text' in content_type or 'markdown' in content_type:
+                    text = data.decode('utf-8', errors='replace')
+                    resolved_type = self.resolve_type(url)
+                    return (resolved_type if resolved_type != 'html' else 'text', text)
+
+                # Handle images - save to temp file
+                if 'image' in content_type or self.resolve_type(url) == 'image':
+                    ext = os.path.splitext(self.extract_filename(url) or 'image.png')[1] or '.png'
+                    temp_file = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+                    temp_file.write(data)
+                    temp_file.close()
+                    return ("image", temp_file.name)
+
+                # Handle PDF - save to temp file
+                if 'pdf' in content_type or self.resolve_type(url) == 'pdf':
+                    temp_file = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
+                    temp_file.write(data)
+                    temp_file.close()
+                    return ("pdf", temp_file.name)
+
+                # Default to HTML text
+                text = data.decode('utf-8', errors='replace')
+                return ("html", text)
+
+        except Exception as e:
+            print(f"Failed to fetch URL {url}: {e}")
+            return None
+
+    def cleanup_temp_file(self, path: str) -> bool:
+        """Delete a temp file if it exists."""
+        try:
+            if path and os.path.exists(path):
+                os.unlink(path)
+                return True
+        except Exception:
+            pass
+        return False
