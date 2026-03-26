@@ -63,6 +63,12 @@ class ConflictResolver:
         # Compare conditions
         if func1.condition and func2.condition:
             if func1.condition != func2.condition:
+                auth1 = func1.source_authority or "unknown"
+                auth2 = func2.source_authority or "unknown"
+                # Auto-resolve if authority scores differ
+                score1 = self.AUTHORITY_PRIORITY.get(auth1, 0)
+                score2 = self.AUTHORITY_PRIORITY.get(auth2, 0)
+                needs_human = (score1 == score2)  # need human only when equal authority
                 return Conflict(
                     id=f"conflict_{conflict_id:03d}",
                     type="field_value",
@@ -71,12 +77,12 @@ class ConflictResolver:
                     values=[
                         {"source": func1.source_paragraphs[0] if func1.source_paragraphs else "unknown",
                          "content": func1.condition,
-                         "authority": func1.source_authority or "unknown"},
+                         "authority": auth1},
                         {"source": func2.source_paragraphs[0] if func2.source_paragraphs else "unknown",
                          "content": func2.condition,
-                         "authority": func2.source_authority or "unknown"}
+                         "authority": auth2}
                     ],
-                    needs_human=True
+                    needs_human=needs_human
                 )
         return None
 
@@ -104,3 +110,32 @@ class ConflictResolver:
         conflict.final_value = value
         conflict.resolved = True
         conflict.needs_human = False
+
+    def resolve_conflicts(self, conflicts: List[Conflict]) -> tuple:
+        """
+        Resolve detected conflicts automatically where possible.
+
+        Returns:
+            (resolved_conflicts, unresolved_conflicts)
+            - resolved_conflicts: conflicts resolved by authority (final_value set)
+            - unresolved_conflicts: conflicts that need human review
+        """
+        resolved = []
+        unresolved = []
+
+        for conflict in conflicts:
+            if conflict.needs_human:
+                unresolved.append(conflict)
+                continue
+
+            # Auto-resolve by authority
+            winner = self.resolve_by_authority(conflict)
+            if winner:
+                conflict.final_value = winner
+                conflict.resolved = True
+                resolved.append(conflict)
+            else:
+                conflict.needs_human = True
+                unresolved.append(conflict)
+
+        return resolved, unresolved

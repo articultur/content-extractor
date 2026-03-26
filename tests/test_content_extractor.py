@@ -415,3 +415,105 @@ class TestRefLinkerIntegration:
 
         resolved = linker.resolve_reference(ref, known)
         assert resolved == "func_001"
+
+
+class TestStructuredDataMergeDuplicates:
+    def test_merge_duplicates(self):
+        """Test merging duplicate functions using EntityAligner."""
+        from models.structured import Function, StructuredData
+        from associator.entity_aligner import EntityAligner
+
+        structured = StructuredData()
+        structured.add_function(Function(
+            id="f1", name="用户登录", name_normalized="user_login",
+            source_paragraphs=["p1"]
+        ))
+        structured.add_function(Function(
+            id="f2", name="用户登录", name_normalized="user_login",
+            source_paragraphs=["p2"]
+        ))
+        structured.add_function(Function(
+            id="f3", name="登出", name_normalized="logout",
+            source_paragraphs=["p3"]
+        ))
+
+        aligner = EntityAligner()
+        merged = structured.merge_duplicates(aligner, threshold=0.9)
+
+        assert merged == 1  # one duplicate removed
+        assert len(structured.functions) == 2
+        # Check source_paragraphs were merged
+        f1 = next(f for f in structured.functions if f.id == "f1")
+        assert "p1" in f1.source_paragraphs
+        assert "p2" in f1.source_paragraphs
+
+
+class TestConflictResolverAutoResolution:
+    def test_resolve_by_authority(self):
+        """Test automatic conflict resolution."""
+        from merger.conflict_resolver import Conflict, ConflictResolver
+
+        resolver = ConflictResolver()
+        conflict = Conflict(
+            id="c1", type="field_value", severity="medium", field="condition",
+            values=[
+                {"source": "doc_pm", "content": "条件A", "authority": "产品经理"},
+                {"source": "doc_dev", "content": "条件B", "authority": "开发"},
+            ],
+            needs_human=False
+        )
+
+        resolved, unresolved = resolver.resolve_conflicts([conflict])
+
+        assert len(resolved) == 1
+        assert resolved[0].final_value == "条件A"  # 产品经理 has higher priority
+        assert len(unresolved) == 0
+
+    def test_needs_human_when_equal_authority(self):
+        """Test unresolved when authority is equal."""
+        from merger.conflict_resolver import Conflict, ConflictResolver
+
+        resolver = ConflictResolver()
+        conflict = Conflict(
+            id="c1", type="field_value", severity="medium", field="condition",
+            values=[
+                {"source": "doc1", "content": "条件A", "authority": "unknown"},
+                {"source": "doc2", "content": "条件B", "authority": "unknown"},
+            ],
+            needs_human=True  # equal authority → needs human
+        )
+
+        resolved, unresolved = resolver.resolve_conflicts([conflict])
+
+        assert len(resolved) == 0
+        assert len(unresolved) == 1
+        assert unresolved[0].needs_human == True
+
+
+class TestClipboardHandlerIntegration:
+    def test_parse_used_in_pipeline(self):
+        """Test ClipboardHandler.parse is used for text sources."""
+        from handlers.clipboard import ClipboardHandler
+        from extractors.markdown_extractor import MarkdownExtractor
+
+        handler = ClipboardHandler()
+        extractor = MarkdownExtractor()
+
+        # Markdown content
+        result = handler.parse("# Header\n\nSome text")
+        assert result[0][0] == "markdown"
+        paragraphs = extractor.extract(result[0][1])
+        assert len(paragraphs.paragraphs) >= 1
+
+        # Plain text
+        result = handler.parse("Just plain text without any markdown indicators")
+        assert result[0][0] == "text"
+        paragraphs = extractor.extract(result[0][1])
+        assert len(paragraphs.paragraphs) >= 1
+
+    def test_parse_empty_content(self):
+        """Test empty content returns empty list."""
+        from handlers.clipboard import ClipboardHandler
+        handler = ClipboardHandler()
+        result = handler.parse("")
+        assert result == []

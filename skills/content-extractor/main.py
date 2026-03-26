@@ -18,6 +18,7 @@ from extractors.docx_extractor import DOCXExtractor
 from extractors.vision_mapper import VisionMapper
 from associator.term_mapper import TermMapper
 from associator.ref_linker import RefLinker
+from associator.entity_aligner import EntityAligner
 from merger.conflict_resolver import ConflictResolver
 from merger.graph_builder import GraphBuilder
 from merger.confidence_calculator import ConfidenceCalculator
@@ -41,6 +42,7 @@ class ContentExtractor:
         self.vision_mapper = VisionMapper()
         self.term_mapper = TermMapper()
         self.ref_linker = RefLinker()
+        self.entity_aligner = EntityAligner()
         self.conflict_resolver = ConflictResolver()
         self.graph_builder = GraphBuilder()
         self.confidence_calculator = ConfidenceCalculator()
@@ -66,10 +68,14 @@ class ContentExtractor:
         # Process each source
         for source in sources:
             if source.type == "text":
-                content = source.content
-                paragraphs = self.markdown_extractor.extract(content, source="clipboard")
-                all_paragraphs.extend(paragraphs.paragraphs)
-                all_sources.append("clipboard:text")
+                parsed = self.clipboard_handler.parse(source.content)
+                if not parsed:
+                    all_sources.append("clipboard:empty")
+                else:
+                    content_type, content = parsed[0]
+                    paragraphs = self.markdown_extractor.extract(content, source="clipboard")
+                    all_paragraphs.extend(paragraphs.paragraphs)
+                    all_sources.append(f"clipboard:{content_type}")
 
             elif source.type == "file":
                 result = self.file_handler.read(source.path)
@@ -295,8 +301,13 @@ class ContentExtractor:
         # Add Vision-derived functions
         structured.functions.extend(all_vision_functions)
 
-        # Detect conflicts
-        conflicts = self.conflict_resolver.detect_conflicts(structured.functions)
+        # Merge duplicate functions using EntityAligner
+        merged_count = structured.merge_duplicates(self.entity_aligner, threshold=0.85)
+
+        # Detect and resolve conflicts
+        all_conflicts = self.conflict_resolver.detect_conflicts(structured.functions)
+        resolved_conflicts, unresolved_conflicts = self.conflict_resolver.resolve_conflicts(all_conflicts)
+        conflicts = unresolved_conflicts  # Only pass unresolved to output
 
         # Resolve cross-references to function IDs
         known_entities = {func.name: [func.id] for func in structured.functions}
