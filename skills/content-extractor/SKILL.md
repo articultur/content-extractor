@@ -196,3 +196,42 @@ Vision components become Functions with:
 | Vision MCP / LLM | Semantic image understanding | Optional (enables Vision layer) |
 
 Install optional dependencies: `pip install python-docx pytesseract pillow`
+
+## Roadmap: Future Enhancements
+
+> 以下是经过架构分析后识别的潜在增强方向，按优先级排序。
+
+### Tier 1: 高优先级（推荐优先实现）
+
+| 方向 | 问题 | 实现成本 | 收益 |
+|------|------|---------|------|
+| **层级索引 (Domain Layer)** | 图是扁平的，所有 Function 平铺，无法按功能域检索 | 低 | 高 |
+| **Embedding 检索层** | TermMapper 只做词项匹配，"词不同义同"无法召回 | 中 | 高 |
+| **全文搜索** | 只能图遍历，无法关键词搜索 | 中 | 中 |
+
+### Tier 2: 中优先级（有一定投入产出比）
+
+| 方向 | 问题 | 实现成本 | 收益 |
+|------|------|---------|------|
+| **置信度传播** | 多跳路径置信度不累积，func_A→func_B→func_C 的路径权重丢失 | 中 | 中 |
+| **隐式引用解析** | RefLinker 只识别预设正则 pattern，大量非标准引用格式无法解析 | 高 | 中 |
+
+### 未解决问题（当前不阻塞）
+
+| 方向 | 问题 | 说明 |
+|------|------|------|
+| **精确共指消解** | 同一实体的不同 mention 被当成不同 Function | 需求文档中叙事性描述少，影响有限 |
+
+### Tier 1 详细说明
+
+**层级索引**：在 Function 上增加 `domain` 字段，按功能域分组（认证模块/支付模块/首页模块...）。缩小搜索范围，召回率和精度同时提升。
+
+**Embedding 检索**：引入 vector similarity（chroma/pgvector），将 Function 的 trigger/condition/action/benefit 文本转为向量，支持语义相似搜索，而不只是词项匹配。
+
+**全文搜索**：对 `requirements-report.json` 建倒排索引（MeiliSearch / Elasticsearch），支持关键词直接检索。
+
+### Tier 2 详细说明
+
+**置信度传播**：为图上多跳路径计算累积置信度（如 `A→B 0.9 × B→C 0.7 = A→C 0.63`），支持"强关联"vs"弱关联"筛选，用于回归测试范围判断。
+
+**隐式引用解析**：扩展 RefLinker 支持更多非标准引用格式（如"如上所述"、"同配置文档"、"RFC-12"），或引入 LLM 做引用关系推断。
