@@ -20,6 +20,9 @@ class Function:
     action: Optional[str] = None
     benefit: Optional[str] = None
 
+    # Domain classification
+    domain: Optional[str] = None
+
     # Attributes
     attributes: Dict[str, Any] = field(default_factory=dict)
     priority_from_source: Optional[str] = None

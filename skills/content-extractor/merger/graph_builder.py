@@ -65,6 +65,43 @@ class GraphBuilder:
 
         self.add_edge(func_id, ui_id, "rendered_as", confidence)
 
+    def _normalize_domain_name(self, domain_name: str) -> str:
+        """Normalize domain name to a safe ID string (pinyin for Chinese)."""
+        # Chinese to pinyin mapping for common domains
+        chinese_to_pinyin = {
+            "认证模块": "auth_module",
+            "账户模块": "account_module",
+            "首页模块": "home_module",
+            "订单模块": "order_module",
+            "支付模块": "payment_module",
+            "通知模块": "notification_module",
+            "报表模块": "report_module",
+            "搜索模块": "search_module",
+            "安全模块": "security_module",
+            "配置模块": "config_module",
+            "通用": "common",
+        }
+        if domain_name in chinese_to_pinyin:
+            return chinese_to_pinyin[domain_name]
+        # Fallback: lowercase and replace spaces
+        return domain_name.replace(' ', '_').lower()
+
+    def add_domain_node(self, domain_name: str, metadata: Dict = None):
+        """Add a domain node to the graph."""
+        normalized = self._normalize_domain_name(domain_name)
+        domain_id = f"domain_{normalized}"
+        node = GraphNode(id=domain_id, type="domain", name=domain_name, metadata=metadata or {})
+        self.nodes.append(node)
+        return node
+
+    def link_function_to_domain(self, func_id: str, domain_name: str, confidence: float = 1.0):
+        """Link a function to a domain."""
+        normalized = self._normalize_domain_name(domain_name)
+        domain_id = f"domain_{normalized}"
+        if not self._node_exists(domain_id):
+            self.add_domain_node(domain_name)
+        self.add_edge(func_id, domain_id, "belongs_to", confidence)
+
     def _node_exists(self, node_id: str) -> bool:
         """Check if node exists."""
         return any(n.id == node_id for n in self.nodes)

@@ -19,6 +19,7 @@ from extractors.vision_mapper import VisionMapper
 from associator.term_mapper import TermMapper
 from associator.ref_linker import RefLinker
 from associator.entity_aligner import EntityAligner
+from associator.domain_classifier import DomainClassifier
 from merger.conflict_resolver import ConflictResolver
 from merger.graph_builder import GraphBuilder
 from merger.confidence_calculator import ConfidenceCalculator
@@ -43,6 +44,7 @@ class ContentExtractor:
         self.term_mapper = TermMapper()
         self.ref_linker = RefLinker()
         self.entity_aligner = EntityAligner()
+        self.domain_classifier = DomainClassifier()
         self.conflict_resolver = ConflictResolver()
         self.graph_builder = GraphBuilder()
         self.confidence_calculator = ConfidenceCalculator()
@@ -300,6 +302,22 @@ class ContentExtractor:
 
         # Add Vision-derived functions
         structured.functions.extend(all_vision_functions)
+
+        # Classify functions into domains
+        for func in structured.functions:
+            if func.domain is None:
+                func.domain = self.domain_classifier.classify(func)
+
+        # Add domain nodes to graph
+        domain_functions: Dict[str, List[Function]] = {}
+        for func in structured.functions:
+            if func.domain:
+                domain_functions.setdefault(func.domain, []).append(func)
+
+        for domain_name, funcs in domain_functions.items():
+            self.graph_builder.add_domain_node(domain_name, {"function_count": len(funcs)})
+            for func in funcs:
+                self.graph_builder.link_function_to_domain(func.id, domain_name)
 
         # Link Vision functions to UI pages (rendered_as edges)
         # Build a map of unique page_type -> ui_id to avoid duplicate UI nodes

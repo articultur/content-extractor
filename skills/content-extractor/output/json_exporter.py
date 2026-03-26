@@ -58,6 +58,7 @@ class JSONExporter:
                         "condition": f.condition,
                         "action": f.action,
                         "benefit": f.benefit,
+                        "domain": f.domain,
                         "attributes": f.attributes,
                         "confidence": f.confidence,
                         "source_paragraphs": f.source_paragraphs,
