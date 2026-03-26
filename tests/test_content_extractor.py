@@ -67,6 +67,48 @@ class TestConflictResolver:
         # Same condition = no conflict
 
 
+class TestVisionMapper:
+    def test_vision_component_to_function(self):
+        """Test converting Vision components to L2 Function."""
+        from extractors.vision_mapper import VisionMapper
+
+        mapper = VisionMapper()
+
+        vision_result = {
+            "page_type": "Dashboard",
+            "components": [
+                {"type": "button", "label": "Sign In", "function": "user_login", "data": {}},
+                {"type": "nav", "label": "Home", "function": "navigate_home", "data": {}},
+                {"type": "card", "label": "KPI Card", "function": "display_metrics", "data": {"metrics": ["Active Users", "Sales"]}},
+            ],
+            "layout": "dashboard"
+        }
+
+        functions = mapper.vision_to_functions(vision_result, source_id="img_001")
+        assert len(functions) == 3
+        assert functions[0].name == "Sign In"
+        assert functions[0].name_normalized == "user_login"
+        assert functions[0].trigger == "点击 Sign In 按钮"
+
+    def test_vision_without_function(self):
+        """Test component without explicit function."""
+        from extractors.vision_mapper import VisionMapper
+
+        mapper = VisionMapper()
+
+        vision_result = {
+            "page_type": "Unknown",
+            "components": [
+                {"type": "label", "label": "Some text", "function": None, "data": {}},
+            ]
+        }
+
+        functions = mapper.vision_to_functions(vision_result, source_id="img_002")
+        assert len(functions) == 1
+        assert functions[0].name == "Some text"
+        assert functions[0].name_normalized == "some_text"
+
+
 class TestPDFExtractor:
     def test_extract_text_from_pdf(self):
         """Test PDF text extraction."""

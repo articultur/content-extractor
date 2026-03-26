@@ -51,6 +51,17 @@ class StructuredData:
 
 
 @dataclass
+class VisionFunction:
+    """L2 Function derived from Vision LLM output."""
+    component_type: str
+    label: str
+    function: Optional[str]
+    data: Dict[str, Any]
+    page_type: str
+    layout: str
+
+
+@dataclass
 class ExtractedData:
     """Complete extraction result."""
     l1_paragraphs: List["Paragraph"] = field(default_factory=list)
