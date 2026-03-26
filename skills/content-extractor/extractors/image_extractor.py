@@ -19,6 +19,8 @@ class ImageExtractor:
         self._ocr_available = None
         self._external_ocr: Optional[Callable] = None
         self._external_vision: Optional[Callable] = None
+        self._vision_timeout = 60  # seconds
+        self._vision_max_retries = 2
 
     def set_ocr_provider(self, fn: Callable[[str], Optional[str]]) -> None:
         """
@@ -99,6 +101,7 @@ class ImageExtractor:
         Extract visual understanding using vision model.
 
         Priority: External vision provider (MCP/LLM) > None.
+        Applies timeout and retry with exponential backoff.
 
         Args:
             image_path: Path to image file
@@ -107,17 +110,32 @@ class ImageExtractor:
         Returns:
             dict with vision analysis or None
         """
+        import time
+
         if not os.path.exists(image_path):
             return None
 
         # 1. 外部 Vision provider（MCP/LLM）
         if self._external_vision is not None:
-            try:
-                result = self._external_vision(image_path)
-                if result:
-                    return result
-            except Exception as e:
-                print(f"External vision failed: {e}")
+            last_error = None
+            for attempt in range(self._vision_max_retries):
+                try:
+                    result = self._external_vision(image_path)
+                    if result:
+                        return result
+                except TimeoutError as e:
+                    last_error = f"Timeout after {self._vision_timeout}s (attempt {attempt + 1}/{self._vision_max_retries})"
+                    print(f"External vision timeout: {last_error}")
+                except Exception as e:
+                    last_error = f"{type(e).__name__}: {e} (attempt {attempt + 1}/{self._vision_max_retries})"
+                    print(f"External vision failed: {last_error}")
+
+                if attempt < self._vision_max_retries - 1:
+                    wait_time = 2 ** attempt  # exponential backoff: 1s, 2s
+                    time.sleep(wait_time)
+
+            if last_error:
+                print(f"Vision exhausted after {self._vision_max_retries} attempts")
 
         # 无外部 provider 时返回 None（不要尝试内部 vision）
         return None

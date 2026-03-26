@@ -17,8 +17,12 @@ class RefLinker:
     SECTION_PATTERNS = [
         r"见第?([0-9.]+)节?",
         r"如图?([0-9]+(?:\.[0-9]+)?)",
-        r"参考第?([0-9.]+)节"
+        r"参考第?([0-9.]+)节",
+        r"第([一二三四五六七八九十零]+)章"
     ]
+
+    CN_DIGIT_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5,
+                    "六": 6, "七": 7, "八": 8, "九": 9, "十": 10, "零": 0}
 
     URL_PATTERN = r"https?://[^\s<>\"]+"
 
@@ -45,9 +49,25 @@ class RefLinker:
         for pattern in self.SECTION_PATTERNS:
             for match in re.finditer(pattern, text):
                 section = match.group(1)
+                # Convert Chinese numerals to Arabic for section numbers
+                if re.match(r"^[一二三四五六七八九十零]+$", section):
+                    section_num = 0
+                    if "十" in section:
+                        parts = section.split("十")
+                        if parts[0] == "":
+                            section_num = 10
+                        else:
+                            section_num = self.CN_DIGIT_MAP.get(parts[0], 0) * 10
+                        if len(parts) > 1 and parts[1]:
+                            section_num += self.CN_DIGIT_MAP.get(parts[1], 0)
+                    else:
+                        section_num = self.CN_DIGIT_MAP.get(section, 0)
+                    target = f"section_{section_num}"
+                else:
+                    target = f"section_{section}"
                 references.append({
                     "type": "section",
-                    "target": f"section_{section}",
+                    "target": target,
                     "confidence": 0.9,
                     "match": match.group(0)
                 })

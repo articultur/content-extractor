@@ -350,3 +350,68 @@ class TestConfidenceCalculator:
         assert calc._get_base_confidence("clipboard") == 0.95
         assert calc._get_base_confidence("image") == 0.85
         assert calc._get_base_confidence("vision") == 0.8
+
+
+class TestMarkdownExtractorRoleInference:
+    def test_infer_role_ui_trigger(self):
+        """Test UI interaction sentences are recognized as trigger."""
+        from extractors.markdown_extractor import MarkdownExtractor
+        extractor = MarkdownExtractor()
+
+        # 点击开头的句子应该是 trigger
+        role = extractor._infer_role("点击登录按钮后进入首页")
+        assert role == "trigger"
+
+    def test_infer_role_action(self):
+        """Test action sentences are recognized as action."""
+        from extractors.markdown_extractor import MarkdownExtractor
+        extractor = MarkdownExtractor()
+
+        role = extractor._infer_role("系统自动发送邮件通知用户")
+        assert role == "action"
+
+    def test_infer_role_result(self):
+        """Test result sentences are recognized as result."""
+        from extractors.markdown_extractor import MarkdownExtractor
+        extractor = MarkdownExtractor()
+
+        role = extractor._infer_role("登录成功后进入首页")
+        assert role == "result"
+
+    def test_infer_role_condition(self):
+        """Test condition sentences are recognized as condition."""
+        from extractors.markdown_extractor import MarkdownExtractor
+        extractor = MarkdownExtractor()
+
+        role = extractor._infer_role("如果用户已登录则显示欢迎页")
+        assert role == "condition"
+
+    def test_infer_role_statement(self):
+        """Test neutral sentences return statement."""
+        from extractors.markdown_extractor import MarkdownExtractor
+        extractor = MarkdownExtractor()
+
+        role = extractor._infer_role("这是一个普通描述")
+        assert role == "statement"
+
+
+class TestRefLinkerIntegration:
+    def test_extract_references_from_all_sources(self):
+        """Test RefLinker extracts from multiple paragraph types."""
+        from associator.ref_linker import RefLinker
+        linker = RefLinker()
+
+        refs = linker.extract_references("用户登录流程详见第三章")
+        assert len(refs) >= 1
+        assert any(r["type"] == "section" for r in refs)
+
+    def test_resolve_reference_fuzzy_match(self):
+        """Test resolve_reference uses fuzzy matching."""
+        from associator.ref_linker import RefLinker
+        linker = RefLinker()
+
+        ref = {"type": "cross_doc", "target": "登录功能", "confidence": 0.95}
+        known = {"登录功能": ["func_001"], "用户管理": ["func_002"]}
+
+        resolved = linker.resolve_reference(ref, known)
+        assert resolved == "func_001"

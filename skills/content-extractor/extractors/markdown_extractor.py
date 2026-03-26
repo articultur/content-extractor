@@ -78,29 +78,44 @@ class MarkdownExtractor:
         return sentences
 
     def _infer_role(self, sentence: str) -> str:
-        """Infer the role of a sentence."""
+        """Infer the role of a sentence from its content."""
         sentence_lower = sentence.lower()
 
-        # Trigger indicators
-        trigger_patterns = ['当', '用户', '如果', 'when', 'if', 'after', '登录']
+        # Trigger indicators — user interaction or event start
+        # NOTE: avoid overly generic words like "登录" or "用户" that appear in all sentence types
+        trigger_patterns = [
+            '点击', '选择', '提交', '按下', '输入', '勾选',
+            '当', 'when', 'after', 'before',
+            '登录时', '登出时', '注册时',
+        ]
         for p in trigger_patterns:
             if p in sentence_lower:
                 return "trigger"
 
-        # Condition indicators
-        cond_patterns = ['如果', '满足', '条件', 'when', 'if', '条件是']
+        # Condition indicators — prerequisite or conditional logic
+        cond_patterns = [
+            '如果', '满足', '条件是', '前提是', 'when', 'if', 'unless',
+            '条件', 'required', '前提',
+        ]
         for p in cond_patterns:
             if p in sentence_lower:
                 return "condition"
 
-        # Action indicators
-        action_patterns = ['自动', '发送', '创建', '更新', '删除', '跳转', 'action', 'do']
+        # Action indicators — system or user performs an operation
+        action_patterns = [
+            '自动', '发送', '创建', '更新', '删除', '跳转', '打开', '关闭',
+            '显示', '隐藏', '提交', '保存', '取消',
+            'action', 'do', 'perform', 'execute',
+        ]
         for p in action_patterns:
             if p in sentence_lower:
                 return "action"
 
-        # Result indicators
-        result_patterns = ['享受', '获得', '收到', 'result', 'then']
+        # Result indicators — outcome or benefit
+        result_patterns = [
+            '享受', '获得', '收到', '看到', '返回', '跳转到',
+            'result', 'then', '因此', '所以', '进入',
+        ]
         for p in result_patterns:
             if p in sentence_lower:
                 return "result"

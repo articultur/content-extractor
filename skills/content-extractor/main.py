@@ -84,13 +84,14 @@ class ContentExtractor:
                             content_or_path,
                             vision_result=getattr(source, 'vision', None)
                         )
+                        paragraphs = None
                         combined_text = image_result.get("combined_text", "")
                         if combined_text:
                             paragraphs = self.markdown_extractor.extract(combined_text, source=source.path)
                             all_paragraphs.extend(paragraphs.paragraphs)
-                        # 处理 Vision 结果
+                        # 处理 Vision 结果（即使 OCR 失败，Vision 仍可能有内容）
                         if image_result.get("vision"):
-                            last_para_id = paragraphs.paragraphs[-1].id if paragraphs.paragraphs else None
+                            last_para_id = paragraphs.paragraphs[-1].id if paragraphs and paragraphs.paragraphs else None
                             all_references.append({
                                 "type": "vision_analysis",
                                 "target": image_result["vision"].get("page_type", "UI Component"),
@@ -125,6 +126,7 @@ class ContentExtractor:
                                             vision_result=getattr(source, 'vision', None)
                                         )
                                         combined_text = image_result.get("combined_text", "")
+                                        img_paragraphs = None
                                         if combined_text:
                                             img_paragraphs = self.markdown_extractor.extract(
                                                 combined_text,
@@ -132,7 +134,7 @@ class ContentExtractor:
                                             )
                                             all_paragraphs.extend(img_paragraphs)
                                         if image_result.get("vision"):
-                                            last_para_id = img_paragraphs[-1].id if img_paragraphs else None
+                                            last_para_id = img_paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
                                             all_references.append({
                                                 "type": "vision_analysis",
                                                 "target": image_result["vision"].get("page_type", "UI Component"),
@@ -196,6 +198,7 @@ class ContentExtractor:
                                 content_or_path,
                                 vision_result=getattr(source, 'vision', None)
                             )
+                            img_paragraphs = None
                             if image_result.get("combined_text"):
                                 img_paragraphs = self.markdown_extractor.extract(
                                     image_result["combined_text"],
@@ -203,7 +206,7 @@ class ContentExtractor:
                                 )
                                 all_paragraphs.extend(img_paragraphs)
                             if image_result.get("vision"):
-                                last_para_id = img_paragraphs[-1].id if img_paragraphs else None
+                                last_para_id = img_paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
                                 all_references.append({
                                     "type": "vision_analysis",
                                     "target": image_result["vision"].get("page_type", "UI Component"),
@@ -231,6 +234,7 @@ class ContentExtractor:
                                     for img_data in page_imgs:
                                         if isinstance(img_data, str) and os.path.exists(img_data):
                                             img_result = self.image_extractor.extract_full(img_data)
+                                            img_paragraphs = None
                                             if img_result.get("combined_text"):
                                                 img_paragraphs = self.markdown_extractor.extract(
                                                     img_result["combined_text"],
@@ -238,7 +242,7 @@ class ContentExtractor:
                                                 )
                                                 all_paragraphs.extend(img_paragraphs)
                                             if img_result.get("vision"):
-                                                last_para_id = img_paragraphs[-1].id if img_paragraphs else None
+                                                last_para_id = img_paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
                                                 all_references.append({
                                                     "type": "vision_analysis",
                                                     "target": img_result["vision"].get("page_type", "UI Component"),
@@ -260,12 +264,12 @@ class ContentExtractor:
                     else:
                         all_sources.append(f"url:{source.path} (fetch failed)")
 
-            # Extract cross-references
-            for para in paragraphs.paragraphs if 'paragraphs' in locals() else []:
-                refs = self.ref_linker.extract_references(para.raw_text)
-                for ref in refs:
-                    ref["source_paragraph"] = para.id
-                all_references.extend(refs)
+        # Extract cross-references from all collected paragraphs
+        for para in all_paragraphs:
+            refs = self.ref_linker.extract_references(para.raw_text)
+            for ref in refs:
+                ref["source_paragraph"] = para.id
+            all_references.extend(refs)
 
         # Build structured data
         structured = StructuredData()
@@ -293,6 +297,24 @@ class ContentExtractor:
 
         # Detect conflicts
         conflicts = self.conflict_resolver.detect_conflicts(structured.functions)
+
+        # Resolve cross-references to function IDs
+        known_entities = {func.name: [func.id] for func in structured.functions}
+        for ref in all_references:
+            resolved = self.ref_linker.resolve_reference(ref, known_entities)
+            if resolved:
+                ref["resolved_to"] = resolved
+                # Also link the two functions in the graph
+                src_para = ref.get("source_paragraph")
+                src_func_id = None
+                for func in structured.functions:
+                    if src_para in func.source_paragraphs:
+                        src_func_id = func.id
+                        break
+                if src_func_id:
+                    self.graph_builder.link_function_to_api(
+                        src_func_id, resolved, ref.get("target", ""), ref.get("confidence", 0.9)
+                    )
 
         # Build associations using term mapper
         for func in structured.functions:
