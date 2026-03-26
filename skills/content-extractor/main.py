@@ -14,6 +14,7 @@ from handlers.url_handler import URLHandler
 from extractors.markdown_extractor import MarkdownExtractor
 from extractors.image_extractor import ImageExtractor
 from extractors.pdf_extractor import PDFExtractor
+from extractors.docx_extractor import DOCXExtractor
 from extractors.vision_mapper import VisionMapper
 from associator.term_mapper import TermMapper
 from associator.ref_linker import RefLinker
@@ -35,6 +36,7 @@ class ContentExtractor:
         self.markdown_extractor = MarkdownExtractor()
         self.image_extractor = ImageExtractor()
         self.pdf_extractor = PDFExtractor()
+        self.docx_extractor = DOCXExtractor()
         self.vision_mapper = VisionMapper()
         self.term_mapper = TermMapper()
         self.ref_linker = RefLinker()
@@ -147,6 +149,25 @@ class ContentExtractor:
                                             os.unlink(img_data)
                                         except Exception:
                                             pass
+
+                    elif content_type == "docx":
+                        # DOCX 提取：段落文本 + 表格
+                        if not self.docx_extractor.is_available():
+                            # python-docx 未安装时记录但不处理
+                            pass
+                        else:
+                            docx_result = self.docx_extractor.extract_full(content_or_path)
+                            if docx_result:
+                                docx_text = docx_result.get("text", "")
+                                if docx_text.strip():
+                                    paragraphs = self.markdown_extractor.extract(docx_text, source=source.path)
+                                    all_paragraphs.extend(paragraphs.paragraphs)
+                                # 处理 DOCX 表格（转为文本行）
+                                for table_text in docx_result.get("tables", []):
+                                    if table_text.strip():
+                                        table_paragraphs = self.markdown_extractor.extract(table_text, source=f"{source.path}#table")
+                                        all_paragraphs.extend(table_paragraphs.paragraphs)
+
                     all_sources.append(f"file:{source.path}")
 
             elif source.type == "url":

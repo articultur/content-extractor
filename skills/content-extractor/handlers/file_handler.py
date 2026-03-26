@@ -10,7 +10,8 @@ class FileHandler:
 
     SUPPORTED_EXTENSIONS = {
         '.md', '.markdown', '.txt',
-        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.pdf'  # Images for OCR
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.pdf',
+        '.docx',  # Word documents
     }
 
     def can_handle(self, path: str) -> bool:
@@ -40,6 +41,9 @@ class FileHandler:
 
         if ext == '.pdf':
             return ("pdf", path)  # Return path for PDF processing
+
+        if ext == '.docx':
+            return ("docx", path)  # Return path for DOCX processing
 
         return None
 

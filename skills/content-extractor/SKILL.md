@@ -34,6 +34,7 @@ input:
 | Text | markdown / plain text | MarkdownExtractor |
 | File | .md, .txt | MarkdownExtractor |
 | File | .pdf | PDFExtractor → text + embedded images |
+| File | .docx | DOCXExtractor → paragraphs + tables |
 | File | .png, .jpg, .jpeg | ImageExtractor (OCR + Vision) |
 | URL | .md, .markdown | URLHandler → fetch → MarkdownExtractor |
 | URL | .pdf | URLHandler → fetch → PDFExtractor |
@@ -83,6 +84,7 @@ Vision components are converted to L2 Function objects with:
 
 - `pdfplumber` - PDF text extraction (required for PDF support)
 - `PyMuPDF` (fitz) - PDF image extraction (optional, enables embedded image processing)
+- `python-docx` - DOCX text extraction (optional, enables .docx support)
 - `Pillow` - Image processing for OCR pre-processing
 - `anthropic` / `openai` / Vision MCP - LLM providers for Vision analysis
 

@@ -253,3 +253,43 @@ class TestPDFExtractor:
         assert "page_count" in result
         assert "images" in result
         assert isinstance(result["images"], list)
+
+
+class TestDOCXExtractor:
+    def test_is_available(self):
+        """Test DOCX availability check."""
+        from extractors.docx_extractor import DOCXExtractor
+        extractor = DOCXExtractor()
+        result = extractor.is_available()
+        assert isinstance(result, bool)
+
+    def test_extract_full_returns_structure(self):
+        """Test DOCX extract_full returns expected structure."""
+        from extractors.docx_extractor import DOCXExtractor
+        import os
+
+        extractor = DOCXExtractor()
+        if not extractor.is_available():
+            pytest.skip("python-docx not installed")
+
+        docx_path = "tests/fixtures/sample.docx"
+        if not os.path.exists(docx_path):
+            pytest.skip("No test DOCX available")
+
+        result = extractor.extract_full(docx_path)
+        assert result is not None
+        assert "text" in result
+        assert "paragraphs" in result
+        assert "page_count" in result
+        assert "tables" in result
+        assert "metadata" in result
+
+    def test_extract_full_returns_none_for_missing_file(self):
+        """Test DOCX extract_full returns None for non-existent file."""
+        from extractors.docx_extractor import DOCXExtractor
+        extractor = DOCXExtractor()
+        if not extractor.is_available():
+            pytest.skip("python-docx not installed")
+
+        result = extractor.extract_full("nonexistent.docx")
+        assert result is None
