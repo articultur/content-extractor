@@ -27,3 +27,9 @@ input:
 - L1: Paragraph index (preserves raw text)
 - L2: Structured data (machine-readable)
 - Three-layer association: term mapping → reference linking → entity alignment
+
+## Dependencies
+
+- `pdfplumber` - PDF text extraction (optional, falls back gracefully if not installed)
+- `Pillow` - Image processing for OCR pre-processing
+- `anthropic` / `openai` - LLM providers for Vision analysis
