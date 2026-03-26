@@ -172,7 +172,8 @@ class GraphBuilder:
     def get_all_path_confidences(self, max_hops: int = 3) -> Dict[tuple, float]:
         """Compute cumulative confidence for all reachable pairs within max_hops.
 
-        Uses Floyd-Warshall style dynamic programming approach.
+        Uses BFS to properly track hop count and compute maximum confidence
+        for paths with at most max_hops edges.
 
         Args:
             max_hops: Maximum number of edges to traverse (default 3)
@@ -180,37 +181,33 @@ class GraphBuilder:
         Returns:
             Dict mapping (from_id, to_id) tuples to their maximum path confidence
         """
-        node_ids = [n.id for n in self.nodes]
         adj = self._get_adjacency_list()
+        node_ids = [n.id for n in self.nodes]
+        result: Dict[tuple, float] = {}
 
-        # Initialize: direct edge confidences, 0 for unreachable
-        # dist[i][j] = maximum confidence from i to j
-        dist = {}
-        for i in node_ids:
-            dist[i] = {}
-            for j in node_ids:
-                dist[i][j] = 0.0
-            dist[i][i] = 1.0
+        for source in node_ids:
+            # BFS from source tracking path confidence and hop count
+            queue = [(source, 1.0, 0)]  # (node, confidence, hops_used)
+            visited_best: Dict[str, float] = {source: 1.0}
 
-        # Set initial edge confidences
-        for edge in self.edges:
-            dist[edge.from_id][edge.to_id] = max(dist[edge.from_id][edge.to_id], edge.confidence)
+            while queue:
+                current, current_conf, hops = queue.pop(0)
 
-        # Floyd-Warshall with confidence multiplication (max instead of min)
-        for k in node_ids:
-            for i in node_ids:
-                for j in node_ids:
-                    if dist[i][k] > 0 and dist[k][j] > 0:
-                        new_conf = dist[i][k] * dist[k][j]
-                        dist[i][j] = max(dist[i][j], new_conf)
+                if hops >= max_hops:
+                    continue
 
-        # Filter to only include paths within max_hops
-        # After n iterations of Floyd-Warshall, paths use at most n edges
-        result = {}
-        for i in node_ids:
-            for j in node_ids:
-                if i != j and dist[i][j] > 0:
-                    result[(i, j)] = dist[i][j]
+                for neighbor, edge_conf in adj.get(current, []):
+                    new_conf = current_conf * edge_conf
+                    neighbor_hops = hops + 1
+
+                    # Update if better confidence or first visit at this hop level
+                    key = (source, neighbor)
+                    is_better = key not in visited_best or new_conf > visited_best[neighbor]
+                    if neighbor_hops <= max_hops and is_better:
+                        visited_best[neighbor] = new_conf
+                        if source != neighbor:
+                            result[key] = new_conf
+                        queue.append((neighbor, new_conf, neighbor_hops))
 
         return result
 
