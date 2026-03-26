@@ -25,6 +25,7 @@ input:
 
 - Markdown report: `requirements-report.md`
 - JSON structured: `requirements-report.json`
+- Association graph: `requirements-graph.json`
 
 ## Supported Input Types
 
@@ -32,9 +33,14 @@ input:
 |------|--------|------------|
 | Text | markdown / plain text | MarkdownExtractor |
 | File | .md, .txt | MarkdownExtractor |
-| File | .pdf | PDFExtractor → text + images |
+| File | .pdf | PDFExtractor → text + embedded images |
 | File | .png, .jpg, .jpeg | ImageExtractor (OCR + Vision) |
-| URL | http(s):// | URLHandler → content-type parser |
+| URL | .md, .markdown | URLHandler → fetch → MarkdownExtractor |
+| URL | .pdf | URLHandler → fetch → PDFExtractor |
+| URL | .png, .jpg, .jpeg | URLHandler → fetch → ImageExtractor (OCR + Vision) |
+| URL | .html, other | URLHandler → fetch → HTML strip → MarkdownExtractor |
+
+**URL type resolution:** URLHandler resolves type by file extension in URL path, with `Content-Type` header as fallback. Falls back to HTML for unknown extensions.
 
 ## Architecture
 
@@ -51,6 +57,27 @@ PDF files are processed in two stages:
 Each embedded image in a PDF goes through:
 - OCR (PaddleOCR) — for text within images
 - Vision LLM — for semantic understanding of diagrams/UI/charts
+
+Extracted images are processed as temporary files and cleaned up after use.
+
+## Vision Pipeline
+
+Images (from files, PDFs, or URLs) are processed through a two-layer extraction:
+
+1. **OCR layer** (PaddleOCR) — extracts visible text from images
+2. **Vision LLM layer** — semantic analysis of UI components, diagrams, and charts
+
+Vision components are converted to L2 Function objects with:
+- `trigger` — user interaction (e.g., "点击 Sign In 按钮")
+- `name_normalized` — machine-readable identifier (e.g., `user_login`)
+- `name` — display label (e.g., "Sign In")
+
+## Architecture
+
+- **L1**: Paragraph index — preserves `raw_text`, section headers, sentence roles (trigger/condition/action/result)
+- **L2**: Structured Function objects — machine-readable with trigger/condition/action/benefit fields
+- **Three-layer association**: term mapping → reference linking → entity alignment
+- **Graph output**: Function associations written to `requirements-graph.json`
 
 ## Dependencies
 
