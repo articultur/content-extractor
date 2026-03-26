@@ -1,6 +1,6 @@
 """Build functionality graph from extracted data."""
 
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from dataclasses import dataclass, field
 
 
@@ -124,6 +124,120 @@ class GraphBuilder:
                 for e in self.edges
             ]
         }
+
+    def _get_adjacency_list(self) -> Dict[str, List[tuple]]:
+        """Build adjacency list from edges for efficient traversal."""
+        adj = {}
+        for edge in self.edges:
+            if edge.from_id not in adj:
+                adj[edge.from_id] = []
+            adj[edge.from_id].append((edge.to_id, edge.confidence))
+        return adj
+
+    def get_path_confidence(self, from_id: str, to_id: str, max_hops: int = 3) -> float:
+        """Find maximum cumulative confidence path between two nodes.
+
+        Uses DFS to find all paths up to max_hops and returns the maximum
+        cumulative confidence (product of edge confidences along the path).
+
+        Args:
+            from_id: Source node ID
+            to_id: Target node ID
+            max_hops: Maximum number of edges to traverse (default 3)
+
+        Returns:
+            Maximum cumulative confidence (0 if no path exists)
+        """
+        if from_id == to_id:
+            return 1.0
+
+        adj = self._get_adjacency_list()
+
+        def dfs(current: str, target: str, hops: int, current_confidence: float) -> float:
+            if hops > max_hops:
+                return 0.0
+            if current == target:
+                return current_confidence
+
+            max_path_conf = 0.0
+            for neighbor, edge_conf in adj.get(current, []):
+                new_confidence = current_confidence * edge_conf
+                path_conf = dfs(neighbor, target, hops + 1, new_confidence)
+                max_path_conf = max(max_path_conf, path_conf)
+
+            return max_path_conf
+
+        return dfs(from_id, to_id, 0, 1.0)
+
+    def get_all_path_confidences(self, max_hops: int = 3) -> Dict[tuple, float]:
+        """Compute cumulative confidence for all reachable pairs within max_hops.
+
+        Uses Floyd-Warshall style dynamic programming approach.
+
+        Args:
+            max_hops: Maximum number of edges to traverse (default 3)
+
+        Returns:
+            Dict mapping (from_id, to_id) tuples to their maximum path confidence
+        """
+        node_ids = [n.id for n in self.nodes]
+        adj = self._get_adjacency_list()
+
+        # Initialize: direct edge confidences, 0 for unreachable
+        # dist[i][j] = maximum confidence from i to j
+        dist = {}
+        for i in node_ids:
+            dist[i] = {}
+            for j in node_ids:
+                dist[i][j] = 0.0
+            dist[i][i] = 1.0
+
+        # Set initial edge confidences
+        for edge in self.edges:
+            dist[edge.from_id][edge.to_id] = max(dist[edge.from_id][edge.to_id], edge.confidence)
+
+        # Floyd-Warshall with confidence multiplication (max instead of min)
+        for k in node_ids:
+            for i in node_ids:
+                for j in node_ids:
+                    if dist[i][k] > 0 and dist[k][j] > 0:
+                        new_conf = dist[i][k] * dist[k][j]
+                        dist[i][j] = max(dist[i][j], new_conf)
+
+        # Filter to only include paths within max_hops
+        # After n iterations of Floyd-Warshall, paths use at most n edges
+        result = {}
+        for i in node_ids:
+            for j in node_ids:
+                if i != j and dist[i][j] > 0:
+                    result[(i, j)] = dist[i][j]
+
+        return result
+
+    def find_strong_associations(self, threshold: float = 0.5) -> List[tuple]:
+        """Find all pairs of functionality nodes with path confidence above threshold.
+
+        Useful for regression test scope: "if func A changes, which funcs are strongly affected?"
+
+        Args:
+            threshold: Minimum path confidence (default 0.5)
+
+        Returns:
+            List of (from_id, to_id, path_confidence) tuples sorted by confidence descending
+        """
+        all_confidences = self.get_all_path_confidences()
+
+        # Filter to only functionality nodes
+        func_nodes = {n.id for n in self.nodes if n.type == "functionality"}
+
+        strong_associations = []
+        for (from_id, to_id), conf in all_confidences.items():
+            if from_id in func_nodes and to_id in func_nodes and conf >= threshold:
+                strong_associations.append((from_id, to_id, conf))
+
+        # Sort by confidence descending
+        strong_associations.sort(key=lambda x: x[2], reverse=True)
+        return strong_associations
 
     def detect_cycles(self) -> List[List[str]]:
         """Detect cycles in the graph."""
