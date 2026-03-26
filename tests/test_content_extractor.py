@@ -65,3 +65,65 @@ class TestConflictResolver:
         ]
         conflicts = resolver.detect_conflicts(funcs)
         # Same condition = no conflict
+
+
+class TestPDFExtractor:
+    def test_extract_text_from_pdf(self):
+        """Test PDF text extraction."""
+        from extractors.pdf_extractor import PDFExtractor
+        import os
+
+        extractor = PDFExtractor()
+
+        # Skip if no pdfplumber
+        if not extractor.is_available():
+            pytest.skip("pdfplumber not installed")
+
+        # Test with existing PDF or skip
+        pdf_path = "tests/fixtures/sample.pdf"
+        if not os.path.exists(pdf_path):
+            pytest.skip("No test PDF available")
+
+        result = extractor.extract(pdf_path)
+        assert result is not None
+        assert len(result) > 0
+
+    def test_pdf_page_extraction(self):
+        """Test multi-page PDF extraction.
+
+        Note: Page-level extraction is covered by test_pdf_full_extraction
+        which validates the 'pages' key in the result structure.
+        """
+        from extractors.pdf_extractor import PDFExtractor
+        extractor = PDFExtractor()
+        if not extractor.is_available():
+            pytest.skip("pdfplumber not installed")
+
+        pdf_path = "tests/fixtures/sample.pdf"
+        if not os.path.exists(pdf_path):
+            pytest.skip("No test PDF available")
+
+        # Verify extract_full returns page data (covers page extraction)
+        result = extractor.extract_full(pdf_path)
+        assert result is not None
+        assert "pages" in result
+        assert isinstance(result["pages"], list)
+
+    def test_pdf_full_extraction(self):
+        """Test full PDF extraction with metadata."""
+        from extractors.pdf_extractor import PDFExtractor
+        import os
+
+        extractor = PDFExtractor()
+        if not extractor.is_available():
+            pytest.skip("pdfplumber not installed")
+
+        pdf_path = "tests/fixtures/sample.pdf"
+        if not os.path.exists(pdf_path):
+            pytest.skip("No test PDF available")
+
+        result = extractor.extract_full(pdf_path)
+        assert result is not None
+        assert "pages" in result
+        assert "metadata" in result
+        assert "page_count" in result

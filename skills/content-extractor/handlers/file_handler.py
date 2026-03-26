@@ -10,7 +10,7 @@ class FileHandler:
 
     SUPPORTED_EXTENSIONS = {
         '.md', '.markdown', '.txt',
-        '.png', '.jpg', '.jpeg', '.gif', '.bmp'  # Images for OCR
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.pdf'  # Images for OCR
     }
 
     def can_handle(self, path: str) -> bool:
