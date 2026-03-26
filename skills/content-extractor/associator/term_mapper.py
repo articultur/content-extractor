@@ -1,6 +1,6 @@
 """Term-based association using dictionary lookup."""
 
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Optional
 from models.structured import Function
 from dictionaries import TermDictionary
 
@@ -10,6 +10,17 @@ class TermMapper:
 
     def __init__(self, dictionary: TermDictionary = None):
         self.dictionary = dictionary or TermDictionary()
+
+    def embed_text(self, text: str) -> Optional[List[float]]:
+        """Generate embedding vector using sentence-transformers (if available)."""
+        try:
+            from sentence_transformers import SentenceTransformer
+            if not hasattr(self, '_embedding_model'):
+                self._embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            embedding = self._embedding_model.encode([text])[0]
+            return embedding.tolist()
+        except ImportError:
+            return None
 
     def extract_terms(self, text: str) -> Set[str]:
         """Extract all matching terms from text."""

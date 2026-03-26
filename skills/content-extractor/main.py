@@ -335,6 +335,39 @@ class ContentExtractor:
                 ui_id = page_type_to_ui_id[page_type]
                 self.graph_builder.add_edge(vf.id, ui_id, "rendered_as", 0.7)
 
+        # Generate embeddings for semantic search
+        from storage.vector_store import create_vector_store
+        vector_store = None
+        embedding_count = 0
+        try:
+            vector_store = create_vector_store("auto")
+            for func in structured.functions:
+                text = self._build_embedding_text(func)
+                if text:
+                    try:
+                        vector_store.add(func.id, text, {"name": func.name, "domain": func.domain})
+                        embedding_count += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Semantic associations via embeddings
+        if vector_store and embedding_count > 0:
+            for func in structured.functions:
+                text = self._build_embedding_text(func)
+                if not text:
+                    continue
+                try:
+                    results = vector_store.search(text, top_k=3)
+                    for r in results:
+                        if r.id != func.id:
+                            self.graph_builder.link_function_to_api(
+                                func.id, r.id, r.text, r.score
+                            )
+                except Exception:
+                    pass
+
         # Merge duplicate functions using EntityAligner
         merged_count = structured.merge_duplicates(self.entity_aligner, threshold=0.85)
 
@@ -407,7 +440,9 @@ class ContentExtractor:
                 "functions": len(structured.functions),
                 "vision_functions": len(all_vision_functions),
                 "conflicts": len(conflicts),
-                "references": len(all_references)
+                "references": len(all_references),
+                "embeddings": embedding_count,
+                "vector_backend": type(vector_store).__name__ if vector_store else None
             }
         }
 
@@ -417,6 +452,14 @@ class ContentExtractor:
             if s.role == role:
                 return s.text
         return None
+
+    def _build_embedding_text(self, func: Function) -> str:
+        """Build text for embedding generation from function fields."""
+        parts = []
+        for field in [func.name, func.trigger, func.condition, func.action, func.benefit]:
+            if field:
+                parts.append(field)
+        return " | ".join(parts)
 
     def _extract_source_hint(self, source: str) -> str:
         """Extract source type hint from paragraph source path."""
