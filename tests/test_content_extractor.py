@@ -109,6 +109,28 @@ class TestVisionMapper:
         assert functions[0].name_normalized == "some_text"
 
 
+class TestURLHandler:
+    def test_can_handle_url(self):
+        """Test URL pattern recognition."""
+        from handlers.url_handler import URLHandler
+
+        handler = URLHandler()
+
+        assert handler.can_handle("https://example.com/doc.pdf") == True
+        assert handler.can_handle("https://github.com/user/repo/README.md") == True
+        assert handler.can_handle("not a url") == False
+
+    def test_resolve_url_type(self):
+        """Test URL content type resolution."""
+        from handlers.url_handler import URLHandler
+
+        handler = URLHandler()
+
+        assert handler.resolve_type("https://example.com/file.pdf") == "pdf"
+        assert handler.resolve_type("https://example.com/file.md") == "markdown"
+        assert handler.resolve_type("https://example.com/page") == "html"
+
+
 class TestPDFExtractor:
     def test_extract_text_from_pdf(self):
         """Test PDF text extraction."""
