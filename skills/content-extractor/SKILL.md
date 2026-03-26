@@ -42,9 +42,9 @@ input:
 ## Supported Input Types
 
 | Type | Format | Processing |
-|------|--------|------------|
-| Text | markdown / plain text | MarkdownExtractor |
-| Text | `--text` inline flag | MarkdownExtractor (same pipeline) |
+|------|---------|------------|
+| Text | markdown / plain text | ClipboardHandler detects type → MarkdownExtractor |
+| Text | `--text` inline flag | ClipboardHandler detects type → MarkdownExtractor |
 | File | .md, .txt | MarkdownExtractor |
 | File | .pdf | PDFExtractor → text + embedded images |
 | File | .docx | DOCXExtractor → paragraphs + tables |
@@ -56,9 +56,56 @@ input:
 
 **URL type resolution:** URLHandler resolves type by file extension in URL path, with `Content-Type` header as fallback. Falls back to HTML for unknown extensions.
 
-## Architecture
+**Text routing:** `ClipboardHandler.parse()` auto-detects markdown indicators (`#`, ` ``` `, `-`, `**`, etc.) and routes as `"markdown"` or `"text"` — both go to MarkdownExtractor but the routing is tracked in `all_sources`.
 
-### Data Model: L1 → L2
+## Processing Pipeline
+
+```
+Source Input
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│  Processor Layer                                         │
+│  MarkdownExtractor → L1 Paragraphs (section, sentences)  │
+│  PDFExtractor → text + embedded images                   │
+│  DOCXExtractor → paragraphs + tables                     │
+│  ImageExtractor → OCR text + Vision analysis             │
+│  VisionMapper → Vision JSON → L2 Function              │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│  Association Layer                                       │
+│  TermMapper → terminology normalization (Jaccard)        │
+│  RefLinker → cross-document refs (URLs, "第X章")      │
+│  EntityAligner → fuzzy entity merge (Chinese↔English)  │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│  Merge & Conflict Layer                                 │
+│  EntityAligner.merge_duplicates()                      │
+│    merges functions with similar names, combines         │
+│    source_paragraphs, removes duplicates               │
+│  ConflictResolver.detect_conflicts()                   │
+│    detects same-name functions with different fields   │
+│  ConflictResolver.resolve_conflicts()                 │
+│    auto-resolve by authority priority                 │
+│    separates needs_human=True → for human review        │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────┐
+│  Graph Builder                                         │
+│  RefLinker.resolve_reference() → links cross-refs     │
+│  TermMapper associations → links related functions      │
+└─────────────────────────────────────────────────────────┘
+    │
+    ▼
+Output: requirements-report.md / .json / -graph.json
+```
+
+## Data Model: L1 → L2
 
 ```
 L1 Paragraph                          L2 Function
@@ -74,36 +121,28 @@ Sentence.role=result   ───────────▶    Function.benefit
                                      Function.source_paragraphs
 ```
 
-### Processing Layers
-
-**1. Processor Layer** — Converts source content to L1 Paragraphs
-- `MarkdownExtractor`: markdown/text → paragraphs with section/sentence roles
-- `PDFExtractor`: PDF text + embedded images (via PyMuPDF)
-- `DOCXExtractor`: DOCX paragraphs + tables
-- `ImageExtractor`: OCR (pytesseract) + Vision (external MCP/LLM)
-- `VisionMapper`: Vision JSON → L2 Function objects
-
-**2. Association Layer** — Cross-document and cross-entity linking
-- `TermMapper`: Terminology normalization and synonym lookup (Jaccard similarity)
-- `RefLinker`: Cross-document reference extraction (URLs, section refs, cross-references)
-- `EntityAligner`: Fuzzy entity matching with Chinese/English equivalence
-
-**3. Conflict & Confidence Layer**
-- `ConflictResolver`: Detects conflicting field values across sources
-- `ConfidenceCalculator`: Dynamic confidence based on source type + content quality
-
-### Three-layer Association
+## Three-layer Association
 
 ```
 Layer 1 — TermMapper
   Normalize terms (Chinese/English synonyms) → Jaccard-based association
 
 Layer 2 — RefLinker
-  Extract explicit references (URLs, "见第X节", "详见...") from raw text
+  Extract explicit references (URLs, "见第3节", "第三章", "详见...") from raw text
 
 Layer 3 — EntityAligner
   Fuzzy match Function entities across sources (edit distance + normalization)
+  Used for merge_duplicates before conflict detection
 ```
+
+## Conflict Detection & Resolution
+
+ConflictResolver detects field value conflicts between functions with the same normalized name:
+
+- **Authority-based auto-resolution**: When two sources have different authority scores (e.g., "产品经理" > "开发"), the higher authority wins automatically and `final_value` is set.
+- **Equal authority → human review**: When authority scores are equal, `needs_human=True` and the conflict is passed through to the report for manual resolution.
+
+Authority priority: `甲方 > 产品经理/需求文档 > 开发 > 测试 > LLM > unknown`
 
 ## Confidence Scoring
 
@@ -137,7 +176,7 @@ Images are processed through two layers:
 2. **Vision layer** — External MCP/LLM provider (required for semantic understanding)
    - `ImageExtractor.set_vision_provider()` registers the vision callable
    - Timeout: 60 seconds per image
-   - Retry: up to 2 attempts on failure
+   - Retry: up to 2 attempts on failure (exponential backoff: 1s, 2s)
    - Vision converts UI components, diagrams, charts to L2 Function objects
 
 Vision components become Functions with:

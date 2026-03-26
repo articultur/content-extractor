@@ -140,7 +140,7 @@ class ContentExtractor:
                                             )
                                             all_paragraphs.extend(img_paragraphs)
                                         if image_result.get("vision"):
-                                            last_para_id = img_paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
+                                            last_para_id = img_paragraphs.paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
                                             all_references.append({
                                                 "type": "vision_analysis",
                                                 "target": image_result["vision"].get("page_type", "UI Component"),
@@ -212,7 +212,7 @@ class ContentExtractor:
                                 )
                                 all_paragraphs.extend(img_paragraphs)
                             if image_result.get("vision"):
-                                last_para_id = img_paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
+                                last_para_id = img_paragraphs.paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
                                 all_references.append({
                                     "type": "vision_analysis",
                                     "target": image_result["vision"].get("page_type", "UI Component"),
@@ -248,7 +248,7 @@ class ContentExtractor:
                                                 )
                                                 all_paragraphs.extend(img_paragraphs)
                                             if img_result.get("vision"):
-                                                last_para_id = img_paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
+                                                last_para_id = img_paragraphs.paragraphs[-1].id if img_paragraphs and img_paragraphs.paragraphs else None
                                                 all_references.append({
                                                     "type": "vision_analysis",
                                                     "target": img_result["vision"].get("page_type", "UI Component"),
