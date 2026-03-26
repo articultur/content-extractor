@@ -19,6 +19,7 @@ class URLHandler:
     DOMAIN_PARSERS = {
         "github.com": "github",
         "gist.github.com": "gist",
+        # Note: "confluence" matches any domain containing "confluence" (e.g., *.atlassian.com)
         "confluence": "confluence",
         "notion.so": "notion",
         "notion.site": "notion",
@@ -59,7 +60,7 @@ class URLHandler:
             if key in domain:
                 return parser
 
-        return self.resolve_type(url)
+        return "generic"
 
     def extract_filename(self, url: str) -> Optional[str]:
         """Extract filename from URL path."""
