@@ -381,10 +381,33 @@ class ContentExtractor:
 
         # Resolve cross-references to function IDs
         known_entities = {func.name: [func.id] for func in structured.functions}
-        for ref in all_references:
+        # Build ordered entity list for implicit reference context
+        ordered_entities = list(known_entities.keys())
+        prev_entity = None
+        for idx, ref in enumerate(all_references):
+            # Try explicit resolution first
             resolved = self.ref_linker.resolve_reference(ref, known_entities)
-            if resolved:
+            # Fallback to implicit resolution if not found
+            if not resolved:
+                context = {}
+                if prev_entity:
+                    context["previous_entity"] = prev_entity
+                if idx + 1 < len(all_references):
+                    # Peek at next ref's target as potential next_entity
+                    next_ref = all_references[idx + 1]
+                    context["next_entity"] = next_ref.get("target")
+                resolved, implicit_conf = self.ref_linker.resolve_implicit_reference(
+                    ref, known_entities, context
+                )
+                if resolved:
+                    ref["resolved_to"] = resolved
+                    ref["implicit"] = True
+            else:
                 ref["resolved_to"] = resolved
+                implicit_conf = None
+
+            if resolved:
+                prev_entity = resolved
                 # Also link the two functions in the graph
                 src_para = ref.get("source_paragraph")
                 src_func_id = None
@@ -393,8 +416,9 @@ class ContentExtractor:
                         src_func_id = func.id
                         break
                 if src_func_id:
+                    conf = implicit_conf if implicit_conf is not None else ref.get("confidence", 0.9)
                     self.graph_builder.link_function_to_api(
-                        src_func_id, resolved, ref.get("target", ""), ref.get("confidence", 0.9)
+                        src_func_id, resolved, ref.get("target", ""), conf
                     )
 
         # Build associations using term mapper
@@ -449,6 +473,11 @@ class ContentExtractor:
 
         # Write graph output
         graph_data = self.graph_builder.to_dict()
+        # Add strong associations (path confidence >= 0.5) for regression test scope
+        strong_assocs = self.graph_builder.find_strong_associations(threshold=0.5)
+        graph_data["strong_associations"] = [
+            {"from": f, "to": t, "confidence": c} for f, t, c in strong_assocs
+        ]
         with open(graph_path, 'w', encoding='utf-8') as f:
             json.dump(graph_data, f, ensure_ascii=False, indent=2)
 
@@ -499,6 +528,9 @@ class ContentExtractor:
         for field in [func.name, func.trigger, func.condition, func.action, func.benefit]:
             if field:
                 parts.append(field)
+        # Include Vision page_type for better semantic search
+        if func.attributes and func.attributes.get("page_type"):
+            parts.append(func.attributes["page_type"])
         return " | ".join(parts)
 
     def _extract_source_hint(self, source: str) -> str:
